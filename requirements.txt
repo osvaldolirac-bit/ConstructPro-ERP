@@ -5,3 +5,4 @@ pymysql
 cryptography
 pandas
 python-multipart
+streamlit
