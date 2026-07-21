@@ -1,0 +1,67 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Cuentas por cobrar{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Cuentas por cobrar</h1>
+    <p>Control de estados de pago, retenciones y abonos. Saldo abierto: <b class="mono">{{ clp(saldo_total) }}</b></p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ prefix }}/cuentas-por-cobrar/nueva">Nuevo documento</a>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Documento</th>
+          <th>Cliente</th>
+          <th>Obra</th>
+          <th>Emisión</th>
+          <th>Vence</th>
+          <th>Monto</th>
+          <th>Retenido</th>
+          <th>Abonado</th>
+          <th>Saldo</th>
+          <th>Estado</th>
+          <th>Abono</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in cuentas %}
+        <tr>
+          <td><b>{{ r.documento }}</b></td>
+          <td>{{ r.cliente.razon_social if r.cliente else "—" }}</td>
+          <td>{{ r.obra }}</td>
+          <td>{{ fecha_corta(r.fecha_emision) }}</td>
+          <td>{{ fecha_corta(r.fecha_vencimiento) }}</td>
+          <td class="mono">{{ clp(r.monto) }}</td>
+          <td class="mono">{{ clp(r.retenido) }}</td>
+          <td class="mono">{{ clp(r.abonado) }}</td>
+          <td class="mono"><b>{{ clp(r.saldo) }}</b></td>
+          <td>
+            <span class="badge {% if r.estado == 'pagado' %}ok{% elif r.estado == 'parcial' %}warn{% else %}error{% endif %}">
+              {{ r.estado }}
+            </span>
+          </td>
+          <td>
+            {% if r.estado != 'pagado' %}
+            <form method="post" action="{{ prefix }}/cuentas-por-cobrar/{{ r.id }}/abono" class="inline-form">
+              <input type="number" name="abono" min="1" step="1" required placeholder="Monto">
+              <button class="btn btn-secondary" type="submit">+</button>
+            </form>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" class="muted">Sin cuentas por cobrar.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

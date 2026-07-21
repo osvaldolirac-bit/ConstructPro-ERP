@@ -1,0 +1,120 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Dashboard · {{ track_name }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Dashboard</h1>
+    <p>Resumen operativo del carril {{ track_name }}: cobranza, cotizaciones y obras activas.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-secondary" href="{{ prefix }}/cotizaciones/nueva">Nueva cotización</a>
+    <a class="btn btn-primary" href="{{ prefix }}/cuentas-por-cobrar/nueva">Registrar cobranza</a>
+  </div>
+</div>
+
+<section class="metrics">
+  <article class="metric">
+    <span>Saldo por cobrar</span>
+    <strong class="mono">{{ clp(total_cxc) }}</strong>
+  </article>
+  <article class="metric">
+    <span>Facturado</span>
+    <strong class="mono">{{ clp(total_facturado) }}</strong>
+  </article>
+  <article class="metric">
+    <span>Abonado</span>
+    <strong class="mono">{{ clp(total_abonado) }}</strong>
+  </article>
+  <article class="metric">
+    <span>Clientes activos</span>
+    <strong>{{ clientes_activos }}</strong>
+  </article>
+</section>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>Obras</h2>
+    <div class="bars">
+      {% for obra in obras %}
+      <div class="bar-row">
+        <span><b>{{ obra.nombre }}</b><em>{{ obra.avance|int }}%</em></span>
+        <div class="bar"><i style="width: {{ obra.avance }}%"></i></div>
+      </div>
+      {% else %}
+      <p class="muted">Sin obras. Créalas en Administración.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Estados de cobranza</h2>
+    <div class="bars">
+      <div class="bar-row">
+        <span>Pendientes <em>{{ estados.pendiente }}</em></span>
+        <div class="bar"><i style="width: {{ [estados.pendiente * 20, 100]|min }}%"></i></div>
+      </div>
+      <div class="bar-row">
+        <span>Parciales <em>{{ estados.parcial }}</em></span>
+        <div class="bar"><i style="width: {{ [estados.parcial * 20, 100]|min }}%"></i></div>
+      </div>
+      <div class="bar-row">
+        <span>Pagados <em>{{ estados.pagado }}</em></span>
+        <div class="bar"><i style="width: {{ [estados.pagado * 20, 100]|min }}%"></i></div>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:1rem">Cotizaciones registradas: <b>{{ cot_count }}</b></p>
+  </section>
+</div>
+
+<div class="grid-2">
+  <section class="panel">
+    <h3>Últimas cotizaciones</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Folio</th><th>Obra</th><th>Estado</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          {% for c in cotizaciones %}
+          <tr>
+            <td><a href="{{ prefix }}/cotizaciones/{{ c.id }}">{{ c.folio }}</a></td>
+            <td>{{ c.obra }}</td>
+            <td><span class="badge">{{ c.estado }}</span></td>
+            <td class="mono">{{ clp(c.total) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="muted">Sin cotizaciones aún.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>Cuentas recientes</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Doc</th><th>Obra</th><th>Saldo</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          {% for r in cuentas %}
+          <tr>
+            <td>{{ r.documento }}</td>
+            <td>{{ r.obra }}</td>
+            <td class="mono">{{ clp(r.saldo) }}</td>
+            <td>
+              <span class="badge {% if r.estado == 'pagado' %}ok{% elif r.estado == 'parcial' %}warn{% else %}error{% endif %}">
+                {{ r.estado }}
+              </span>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="muted">Sin documentos de cobranza.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

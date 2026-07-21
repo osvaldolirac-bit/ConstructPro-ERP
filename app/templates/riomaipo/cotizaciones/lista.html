@@ -1,0 +1,44 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Cotizaciones{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Cotizaciones</h1>
+    <p>Emisión y seguimiento de cotizaciones del carril {{ track_name }}.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ prefix }}/cotizaciones/nueva">Nueva cotización</a>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Folio</th>
+          <th>Fecha</th>
+          <th>Cliente</th>
+          <th>Obra</th>
+          <th>Estado</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cotizaciones %}
+        <tr>
+          <td><a href="{{ prefix }}/cotizaciones/{{ c.id }}"><b>{{ c.folio }}</b></a></td>
+          <td>{{ fecha_corta(c.fecha) }}</td>
+          <td>{{ c.cliente.razon_social if c.cliente else "—" }}</td>
+          <td>{{ c.obra }}</td>
+          <td><span class="badge">{{ c.estado }}</span></td>
+          <td class="mono">{{ clp(c.total) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">Aún no hay cotizaciones.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

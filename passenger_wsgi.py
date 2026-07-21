@@ -1,9 +1,13 @@
-import sys
 import os
+import sys
 
-# 1. Le decimos al servidor dónde encontrar nuestro código del ERP
+# Raíz del proyecto en el path de Python (cPanel / Passenger)
 sys.path.insert(0, os.path.dirname(__file__))
 
-# 2. Importamos la aplicación principal de FastAPI
-# (Aún no creamos 'app.main', pero lo haremos en el próximo paso)
-from app.main import app as application
+# Prefijo público: https://erpmaster.cl/riomaipo
+# - Si el proxy reenvía la ruta completa, dejar RIOMAIPO_PREFIX=/riomaipo (default).
+# - Si Passenger monta la app DENTRO de /riomaipo y recorta el prefijo,
+#   definir en el hosting: RIOMAIPO_PREFIX=
+os.environ.setdefault("RIOMAIPO_PREFIX", "/riomaipo")
+
+from app.main import app as application  # noqa: E402

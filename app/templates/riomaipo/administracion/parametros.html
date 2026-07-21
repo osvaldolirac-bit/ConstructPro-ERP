@@ -1,0 +1,69 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Parámetros{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Parámetros</h1>
+    <p>Valores de negocio usados en cotizaciones y cobranza.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{{ prefix }}/administracion">Volver</a>
+  </div>
+</div>
+
+<section class="panel">
+  <h2>Nuevo parámetro</h2>
+  <form method="post" action="{{ prefix }}/administracion/parametros">
+    <div class="form-grid">
+      <label>Clave<input name="clave" required placeholder="precio_acero_kg"></label>
+      <label>Nombre<input name="nombre" required placeholder="Precio acero"></label>
+      <label>Valor<input name="valor" required></label>
+      <label>
+        Tipo
+        <select name="tipo">
+          <option value="numero">Número</option>
+          <option value="porcentaje">Porcentaje</option>
+          <option value="texto">Texto</option>
+        </select>
+      </label>
+      <label>Unidad<input name="unidad" placeholder="CLP"></label>
+      <label>Descripción<input name="descripcion"></label>
+    </div>
+    <div class="actions" style="margin-top:0.9rem">
+      <button class="btn btn-primary" type="submit">Crear</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Valores actuales</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Nombre</th><th>Clave</th><th>Tipo</th><th>Valor</th><th>Actualizar</th></tr>
+      </thead>
+      <tbody>
+        {% for p in parametros %}
+        <tr>
+          <td>
+            <b>{{ p.nombre }}</b>
+            {% if p.descripcion %}<div class="muted">{{ p.descripcion }}</div>{% endif %}
+          </td>
+          <td class="mono">{{ p.clave }}</td>
+          <td>{{ p.tipo }}{% if p.unidad %} ({{ p.unidad }}){% endif %}</td>
+          <td class="mono">{{ p.valor }}</td>
+          <td>
+            <form method="post" action="{{ prefix }}/administracion/parametros/{{ p.id }}" class="inline-form">
+              <input name="valor" value="{{ p.valor }}" required>
+              <button class="btn btn-secondary" type="submit">Guardar</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">Sin parámetros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Administración{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Administración</h1>
+    <p>Parámetros maestros del carril {{ track_name }}: clientes, obras y valores de negocio.</p>
+  </div>
+</div>
+
+<section class="admin-cards">
+  <a class="admin-card" href="{{ prefix }}/administracion/clientes">
+    <strong>Clientes</strong>
+    <span class="muted">{{ clientes_count }} registros · RUT, contacto y estado</span>
+  </a>
+  <a class="admin-card" href="{{ prefix }}/administracion/parametros">
+    <strong>Parámetros</strong>
+    <span class="muted">{{ parametros_count }} valores · precios, IVA, retención</span>
+  </a>
+  <a class="admin-card" href="{{ prefix }}/administracion/obras">
+    <strong>Obras</strong>
+    <span class="muted">{{ obras_count }} proyectos · avance y ubicación</span>
+  </a>
+</section>
+{% endblock %}

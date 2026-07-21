@@ -1,0 +1,60 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Obras{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Obras</h1>
+    <p>Proyectos asociados al carril {{ track_name }}.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{{ prefix }}/administracion">Volver</a>
+  </div>
+</div>
+
+<section class="panel">
+  <h2>Nueva obra</h2>
+  <form method="post" action="{{ prefix }}/administracion/obras">
+    <div class="form-grid">
+      <label>Código<input name="codigo" required placeholder="RM-003"></label>
+      <label>Nombre<input name="nombre" required></label>
+      <label>Ubicación<input name="ubicacion"></label>
+      <label>
+        Estado
+        <select name="estado">
+          <option value="activa">Activa</option>
+          <option value="pausada">Pausada</option>
+          <option value="cerrada">Cerrada</option>
+        </select>
+      </label>
+      <label>Avance (%)<input type="number" name="avance" min="0" max="100" step="0.1" value="0"></label>
+    </div>
+    <div class="actions" style="margin-top:0.9rem">
+      <button class="btn btn-primary" type="submit">Registrar obra</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Listado</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Código</th><th>Nombre</th><th>Ubicación</th><th>Estado</th><th>Avance</th></tr>
+      </thead>
+      <tbody>
+        {% for o in obras %}
+        <tr>
+          <td class="mono">{{ o.codigo }}</td>
+          <td><b>{{ o.nombre }}</b></td>
+          <td>{{ o.ubicacion or "—" }}</td>
+          <td><span class="badge">{{ o.estado }}</span></td>
+          <td class="mono">{{ o.avance|int }}%</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">Sin obras.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Nueva cotización{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Nueva cotización</h1>
+    <p>Usa parámetros de APU (cemento {{ clp(precio_cemento) }} / maestro {{ clp(costo_maestro) }}/h) como referencia.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{{ prefix }}/cotizaciones">Volver</a>
+  </div>
+</div>
+
+<section class="panel">
+  <form method="post" action="{{ prefix }}/cotizaciones/nueva" id="cot-form">
+    <div class="form-grid">
+      <label>
+        Cliente
+        <select name="cliente_id" required>
+          <option value="">Seleccionar…</option>
+          {% for c in clientes %}
+          <option value="{{ c.id }}">{{ c.razon_social }} ({{ c.rut }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Estado
+        <select name="estado">
+          <option value="borrador">Borrador</option>
+          <option value="enviada">Enviada</option>
+          <option value="aprobada">Aprobada</option>
+        </select>
+      </label>
+      <label class="full">
+        Obra / proyecto
+        <input name="obra" required placeholder="Condominio Río Maipo">
+      </label>
+      <label class="full">
+        Descripción
+        <textarea name="descripcion" placeholder="Alcance de la cotización"></textarea>
+      </label>
+    </div>
+
+    <h3 style="margin:1.2rem 0 0.7rem;font-family:var(--font-display);font-weight:550">Partidas</h3>
+    <div class="item-rows" id="items">
+      <div class="item-row">
+        <label>Partida<input name="partida" required value="Radier hormigón"></label>
+        <label>Unidad<input name="unidad" value="m2"></label>
+        <label>Cantidad<input name="cantidad" type="number" step="0.01" value="100" required></label>
+        <label>P. unitario<input name="precio_unitario" type="number" step="1" value="{{ ((precio_cemento * 0.5) + (costo_maestro * 2))|int }}" required></label>
+        <span></span>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:0.9rem">
+      <button type="button" class="btn btn-secondary" id="add-item">Agregar partida</button>
+      <button type="submit" class="btn btn-primary">Guardar cotización</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('add-item').addEventListener('click', () => {
+  const wrap = document.getElementById('items');
+  const row = document.createElement('div');
+  row.className = 'item-row';
+  row.innerHTML = `
+    <label>Partida<input name="partida" required></label>
+    <label>Unidad<input name="unidad" value="m2"></label>
+    <label>Cantidad<input name="cantidad" type="number" step="0.01" value="1" required></label>
+    <label>P. unitario<input name="precio_unitario" type="number" step="1" value="0" required></label>
+    <button type="button" class="btn btn-ghost" onclick="this.parentElement.remove()">Quitar</button>
+  `;
+  wrap.appendChild(row);
+});
+</script>
+{% endblock %}
