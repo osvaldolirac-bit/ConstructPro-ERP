@@ -1,14 +1,22 @@
-"""ConstructPro ERP — punto de entrada FastAPI (Passenger / VPS)."""
+"""ConstructPro ERP — punto de entrada FastAPI (nginx + uvicorn en VPS)."""
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.core.config import BASE_DIR, RIOMAIPO_PREFIX, SECRET_KEY
+from app.core.config import (
+    BASE_DIR,
+    RIOMAIPO_PORT,
+    RIOMAIPO_PREFIX,
+    SECRET_KEY,
+    TRACK_NAME,
+    TRACK_SLUG,
+)
 from app.core.database import SessionLocal, init_db
 from app.tracks.riomaipo.router import router as riomaipo_router
 from app.tracks.riomaipo.seed import seed_if_empty
@@ -26,14 +34,13 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="ConstructPro ERP",
+    title=f"ERP Master — {TRACK_NAME}",
     description=(
-        "Sistema de Gestión para la Construcción. "
-        "Carril Río Maipo en /riomaipo (dashboard, cotizaciones, CxC y administración)."
+        f"Carril independiente {TRACK_NAME} en {RIOMAIPO_PREFIX or '/'}. "
+        "No comparte proceso ni puerto con La Concepción / demo."
     ),
-    version="1.1.0",
+    version="1.1.1",
     lifespan=lifespan,
-    root_path="",  # PassengerBaseURI se refleja vía SCRIPT_NAME
 )
 
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -49,24 +56,26 @@ app.include_router(riomaipo_router, prefix=RIOMAIPO_PREFIX or "")
 
 @app.get("/")
 def inicio():
-    return {
-        "estado": "En línea",
-        "mensaje": "ConstructPro-ERP operativo.",
-        "carriles": {
-            "riomaipo": {
-                "url": RIOMAIPO_PREFIX,
-                "publico": "https://erpmaster.cl/riomaipo",
-                "modulos": [
-                    "dashboard",
-                    "cotizaciones",
-                    "cuentas-por-cobrar",
-                    "administracion",
-                ],
-            }
-        },
-    }
+    """Evita caer en otros ERP: la raíz del proceso apunta al carril Río Maipo."""
+    target = f"{RIOMAIPO_PREFIX}/" if RIOMAIPO_PREFIX else "/"
+    return RedirectResponse(url=target, status_code=302)
 
 
 @app.get("/health")
-def health():
-    return {"ok": True, "track": "constructpro", "riomaipo": RIOMAIPO_PREFIX}
+def health_root():
+    return {
+        "ok": True,
+        "track": TRACK_SLUG,
+        "nombre": TRACK_NAME,
+        "prefix": RIOMAIPO_PREFIX,
+        "port": RIOMAIPO_PORT,
+        "nota": "Si ves La Concepción, nginx está mal enrutando /riomaipo",
+    }
+
+
+# Health también bajo el prefijo público (útil detrás de nginx)
+if RIOMAIPO_PREFIX:
+
+    @app.get(f"{RIOMAIPO_PREFIX}/health")
+    def health_prefixed():
+        return health_root()

@@ -25,3 +25,6 @@ SECRET_KEY = os.getenv("SECRET_KEY", "riomaipo-dev-change-me")
 APP_NAME = "ERP Master"
 TRACK_NAME = "Río Maipo"
 TRACK_SLUG = "riomaipo"
+
+# Puerto exclusivo del carril (VPS). NO reutilizar el de La Concepción (Streamlit 85xx).
+RIOMAIPO_PORT = int(os.getenv("RIOMAIPO_PORT", "8010"))

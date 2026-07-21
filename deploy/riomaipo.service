@@ -1,0 +1,21 @@
+[Unit]
+Description=ERP Master - Carril Rio Maipo (FastAPI)
+After=network.target
+# No depende de Streamlit La Concepcion / demo
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/erpmaster/constructpro-erp
+Environment=RIOMAIPO_PREFIX=/riomaipo
+Environment=RIOMAIPO_PORT=8010
+Environment=SECRET_KEY=cambiar-en-produccion
+# Environment=DATABASE_URL=mysql+pymysql://user:pass@127.0.0.1/constructpro_riomaipo
+ExecStart=/var/www/erpmaster/constructpro-erp/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=3
+
+# Aislado: solo escucha localhost:8010 (nginx hace el público)
+[Install]
+WantedBy=multi-user.target
