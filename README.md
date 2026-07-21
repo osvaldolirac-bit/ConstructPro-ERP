@@ -1,95 +1,80 @@
 # ConstructPro ERP — Carril Río Maipo
 
-URL pública: **https://erpmaster.cl/riomaipo/**
+URL: **https://erpmaster.cl/riomaipo/**
 
-## Problema actual en el VPS
+## Por qué cae en La Concepción
 
-Nginx está mandando `/riomaipo` a **La Concepción**:
+En el VPS, nginx hoy hace:
 
 ```
-https://erpmaster.cl/riomaipo  →  302  →  /laconcepcion/
+/riomaipo  →  302  →  /laconcepcion/
 ```
 
-Eso no es un bug de esta app: falta el `location /riomaipo/` en nginx y el proceso en el **puerto 8010**.
+porque **no existe** un `location /riomaipo/`.  
+Los cambios en GitHub **no** modifican nginx solos: hay que instalar en el servidor.
 
-### Puertos (no mezclar)
+## Modelo igual a producción / demo
 
-| Carril | Stack | Puerto interno |
-|--------|--------|----------------|
-| La Concepción | Streamlit | 85xx (ej. 8501) |
-| Demo | Streamlit | otro 85xx |
-| **Río Maipo** | **FastAPI / uvicorn** | **8010** |
+| Ruta | App | Puerto |
+|------|-----|--------|
+| `/laconcepcion/` | Streamlit La Concepción | 85xx (ej. 8501) |
+| `/demo/` | Streamlit Demo | otro 85xx |
+| **`/riomaipo/`** | **Streamlit Río Maipo** | **8503** |
 
-Si apuntas `/riomaipo` al puerto de La Concepción, verás ese ERP.
+## Instalación en el VPS (obligatorio)
+
+En el servidor (SSH), dentro del repo:
+
+```bash
+cd /var/www/erpmaster/constructpro-erp   # ajusta la ruta real
+git pull
+sudo bash scripts/install_riomaipo_vps.sh
+```
+
+Ese script:
+
+1. Crea venv e instala dependencias  
+2. Levanta systemd `riomaipo` en **127.0.0.1:8503** con `baseUrlPath=riomaipo`  
+3. Crea `/etc/nginx/snippets/riomaipo-location.conf`  
+4. Inserta el `include` **antes** del redirect a La Concepción  
+5. Recarga nginx  
+
+### Verificar
+
+```bash
+curl -sI https://erpmaster.cl/riomaipo/
+# Debe ser HTTP 200 (NO 302 a /laconcepcion/)
+```
+
+En el navegador debe verse el banner **「ERP Master · Río Maipo」**.
+
+Si sigue La Concepción:
+
+```bash
+sudo nginx -T 2>/dev/null | grep -n -E 'riomaipo|laconcepcion'
+```
+
+El `location /riomaipo` debe aparecer **antes** del `return 302 ... laconcepcion`.
 
 ## Módulos
 
-- Dashboard
-- Cotizaciones
-- Cuentas por cobrar
-- Administración (clientes, parámetros, obras)
+- Dashboard  
+- Cotizaciones  
+- Cuentas por cobrar  
+- Administración (clientes, parámetros, obras)  
 
-Datos aislados en tablas `riomaipo_*`.
-
-## Desarrollo local
+## Local
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ./scripts/start_riomaipo.sh
-# o: uvicorn app.main:app --reload --host 127.0.0.1 --port 8010
 ```
 
-Abrir: http://127.0.0.1:8010/riomaipo/
+Abrir: http://127.0.0.1:8503/riomaipo/
 
-Verificar identidad: http://127.0.0.1:8010/riomaipo/health  
-Debe responder `"track": "riomaipo"` (nunca La Concepción).
+## Nota FastAPI
 
-## Despliegue VPS (nginx + uvicorn)
-
-1. Clonar/actualizar el repo en el servidor (ej. `/var/www/erpmaster/constructpro-erp`).
-2. Crear venv e instalar `requirements.txt`.
-3. Ajustar rutas en `deploy/riomaipo.service` y activar:
-
-```bash
-sudo cp deploy/riomaipo.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now riomaipo
-sudo systemctl status riomaipo
-```
-
-4. Incluir el bloque nginx **antes** del redirect a `/laconcepcion/`:
-
-```bash
-# revisar/editar rutas del include
-sudo nano /etc/nginx/sites-available/erpmaster.cl
-# include .../deploy/nginx-riomaipo.conf;
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-5. Probar:
-
-```bash
-curl -sI https://erpmaster.cl/riomaipo/     # debe ser 200, NO 302 a laconcepcion
-curl -s https://erpmaster.cl/riomaipo/health
-```
-
-Archivos de referencia:
-
-- `deploy/nginx-riomaipo.conf`
-- `deploy/riomaipo.service`
-- `scripts/start_riomaipo.sh`
-
-## Variables de entorno
-
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `RIOMAIPO_PREFIX` | `/riomaipo` | Prefijo público |
-| `RIOMAIPO_PORT` | `8010` | Puerto uvicorn (exclusivo) |
-| `DATABASE_URL` | SQLite `data/riomaipo.db` | MySQL opcional |
-| `SECRET_KEY` | valor de desarrollo | Sesiones |
-
-## Nota
-
-`app_streamlit.py` es solo laboratorio local. **No** usarlo para publicar `/riomaipo` en el VPS.
+También existe un carril FastAPI en `app/` (puerto 8010) como API/alternativa.  
+En este VPS la ruta pública `/riomaipo` se publica con **Streamlit**, igual que demo y La Concepción.
