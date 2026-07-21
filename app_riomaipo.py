@@ -8,8 +8,10 @@ Inspirado en SOLUERP, con gestión mejorada:
 
 from __future__ import annotations
 
+import base64
 import sqlite3
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +20,7 @@ import streamlit.components.v1 as components
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "riomaipo_erp.db"
+LOGO_PATH = BASE_DIR / "static" / "logo_erpmaster.png"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 st.set_page_config(
@@ -353,6 +356,32 @@ def inject_styles() -> None:
   iframe { border-radius: 10px; }
   [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: var(--muted) !important; }
 
+  .rm-footer-mark {
+    margin: 2.4rem 0 .4rem;
+    padding: 1.1rem 0 .2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .25rem;
+    opacity: .18;
+    pointer-events: none;
+    user-select: none;
+    border-top: 1px solid var(--line);
+  }
+  .rm-footer-mark img {
+    width: min(210px, 52vw);
+    height: auto;
+    display: block;
+  }
+  .rm-footer-mark span {
+    font-size: .68rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--brand);
+    font-weight: 700;
+  }
+
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
@@ -385,6 +414,28 @@ def inject_styles() -> None:
         """,
         height=0,
         width=0,
+    )
+
+
+@lru_cache(maxsize=1)
+def logo_data_uri() -> str:
+    if not LOGO_PATH.exists():
+        return ""
+    encoded = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def render_footer() -> None:
+    src = logo_data_uri()
+    if not src:
+        return
+    st.html(
+        f"""
+        <div class="rm-footer-mark" aria-hidden="true">
+          <img src="{src}" alt="ERP Master" />
+          <span>Integración &amp; control inteligente</span>
+        </div>
+        """
     )
 
 
@@ -1349,4 +1400,5 @@ else:
                 st.success("Parámetro actualizado")
                 st.rerun()
 
+render_footer()
 db.close()
