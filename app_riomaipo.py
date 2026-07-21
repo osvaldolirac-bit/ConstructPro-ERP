@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -456,6 +457,85 @@ def kpi_cards(items: list[tuple[str, str, str]]) -> None:
     st.markdown(f'<div class="kpi-grid">{cards}</div>', unsafe_allow_html=True)
 
 
+def readable_bars(
+    df: pd.DataFrame,
+    category: str,
+    value: str,
+    *,
+    color: str = "#2f6fed",
+    value_format: str = ",.0f",
+    height: int = 280,
+) -> None:
+    """Horizontal bars with larger, darker labels for dashboard readability."""
+    chart_df = df.copy()
+    chart_df[category] = chart_df[category].astype(str)
+    chart_df[value] = pd.to_numeric(chart_df[value], errors="coerce").fillna(0)
+    # Keep input order
+    order = chart_df[category].tolist()
+
+    base = (
+        alt.Chart(chart_df)
+        .mark_bar(cornerRadiusEnd=6, size=22)
+        .encode(
+            y=alt.Y(
+                f"{category}:N",
+                sort=order,
+                title=None,
+                axis=alt.Axis(
+                    labelFontSize=13,
+                    labelFontWeight=600,
+                    labelColor="#1a2b3c",
+                    labelLimit=220,
+                    labelPadding=8,
+                    ticks=False,
+                    domain=False,
+                ),
+            ),
+            x=alt.X(
+                f"{value}:Q",
+                title=None,
+                axis=alt.Axis(
+                    labelFontSize=12,
+                    labelColor="#5b6b7c",
+                    grid=True,
+                    gridColor="#e2e8f0",
+                    ticks=False,
+                    domainColor="#c3cfdb",
+                    format=value_format,
+                ),
+            ),
+            color=alt.value(color),
+            tooltip=[
+                alt.Tooltip(f"{category}:N", title="Categoría"),
+                alt.Tooltip(f"{value}:Q", title="Valor", format=value_format),
+            ],
+        )
+    )
+    labels = (
+        alt.Chart(chart_df)
+        .mark_text(
+            align="left",
+            baseline="middle",
+            dx=8,
+            fontSize=13,
+            fontWeight=700,
+            color="#163a5f",
+        )
+        .encode(
+            y=alt.Y(f"{category}:N", sort=order),
+            x=alt.X(f"{value}:Q"),
+            text=alt.Text(f"{value}:Q", format=value_format),
+        )
+    )
+    chart = (
+        (base + labels)
+        .properties(height=height)
+        .configure_view(strokeWidth=0)
+        .configure_axis(labelFont="Manrope, Segoe UI, sans-serif", titleFont="Manrope, Segoe UI, sans-serif")
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+
 def alert_line(nivel: str, msg: str) -> None:
     st.markdown(f'<div class="alert-box alert-{nivel}">{msg}</div>', unsafe_allow_html=True)
 
@@ -830,25 +910,34 @@ if modulo == "Dashboard":
                 {"Etapa": "Rechazada", "Cantidad": por_estado.get("rechazada", (0, 0))[0]},
             ]
         )
-        st.bar_chart(funnel.set_index("Etapa"), color="#2f6fed")
+        readable_bars(funnel, "Etapa", "Cantidad", color="#2f6fed", value_format=",.0f", height=260)
         st.markdown("</div>", unsafe_allow_html=True)
     with col_b:
         st.markdown('<div class="chart-wrap"><h3>Aging cuentas por cobrar</h3>', unsafe_allow_html=True)
         buckets = {
-            "por vencer": 0.0,
-            "vence hoy": 0.0,
+            "Por vencer": 0.0,
+            "Vence hoy": 0.0,
             "1-30 días mora": 0.0,
             "31-60 días mora": 0.0,
             "+60 días mora": 0.0,
-            "sin fecha": 0.0,
+            "Sin fecha": 0.0,
+        }
+        label_map = {
+            "por vencer": "Por vencer",
+            "vence hoy": "Vence hoy",
+            "1-30 días mora": "1-30 días mora",
+            "31-60 días mora": "31-60 días mora",
+            "+60 días mora": "+60 días mora",
+            "sin fecha": "Sin fecha",
         }
         for x in cuentas:
             if float(x["saldo"]) <= 0:
                 continue
             b = aging_bucket(dparse(x["fecha_vencimiento"]), hoy)
-            buckets[b] = buckets.get(b, 0) + float(x["saldo"])
+            key = label_map.get(b, b)
+            buckets[key] = buckets.get(key, 0) + float(x["saldo"])
         aging_df = pd.DataFrame({"Tramo": list(buckets.keys()), "Saldo": list(buckets.values())})
-        st.bar_chart(aging_df.set_index("Tramo"), color="#163a5f")
+        readable_bars(aging_df, "Tramo", "Saldo", color="#163a5f", value_format=",.0f", height=300)
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown(
