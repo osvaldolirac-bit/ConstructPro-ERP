@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import json
 import secrets
 import sqlite3
@@ -22,6 +23,11 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+
+try:
+    from fpdf import FPDF
+except ImportError:  # pragma: no cover
+    FPDF = None
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "riomaipo_erp.db"
@@ -363,6 +369,51 @@ def inject_styles() -> None:
   .stCaption, [data-testid="stCaptionContainer"] { color: var(--muted) !important; }
   iframe { border-radius: 10px; }
   [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: var(--muted) !important; }
+
+  .cot-list {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: var(--shadow);
+    margin-bottom: .9rem;
+  }
+  .cot-row-head, .cot-row {
+    display: grid;
+    grid-template-columns: 16px 1fr 1.3fr 1.1fr .85fr .85fr .95fr;
+    gap: .4rem;
+    align-items: center;
+    padding: .5rem .7rem;
+  }
+  .cot-row-head {
+    font-size: .7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    background: var(--panel-soft);
+    border-bottom: 1px solid var(--line);
+  }
+  .cot-row {
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+  }
+  .cot-row:last-child { border-bottom: 0; }
+  .cot-cell {
+    font-size: .86rem; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cot-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block; background: #2b2f36;
+  }
+  .cot-dot.ok { background: #1f8a65; }
+  .cot-dot.warn { background: #d59a1b; }
+  .cot-dot.muted { background: #8a97a5; }
+  .cot-actions-label {
+    font-size: .7rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--muted); margin: 0 0 .25rem;
+  }
 
   .rm-footer-mark {
     margin: 2.4rem 0 .4rem;
@@ -949,6 +1000,112 @@ def alert_line(nivel: str, msg: str) -> None:
 
 def empty_state(msg: str) -> None:
     st.markdown(f'<div class="empty-state">{msg}</div>', unsafe_allow_html=True)
+
+
+def estado_dot_class(estado: str) -> str:
+    if estado == "aprobada":
+        return "ok"
+    if estado == "enviada":
+        return "warn"
+    return "muted"
+
+
+def fetch_cotizacion(db: sqlite3.Connection, cot_id: int):
+    return db.execute(
+        """
+        SELECT c.*, cl.razon_social, cl.rut AS cliente_rut,
+               cl.email AS cliente_email, cl.telefono AS cliente_telefono
+        FROM cotizaciones c
+        LEFT JOIN clientes cl ON cl.id = c.cliente_id
+        WHERE c.id=?
+        """,
+        (cot_id,),
+    ).fetchone()
+
+
+def fetch_cotizacion_items(db: sqlite3.Connection, cot_id: int):
+    return db.execute(
+        """
+        SELECT descripcion, unidad, cantidad, precio_unitario, total
+        FROM cotizacion_items
+        WHERE cotizacion_id=?
+        ORDER BY id
+        """,
+        (cot_id,),
+    ).fetchall()
+
+
+def delete_cotizacion(db: sqlite3.Connection, cot_id: int) -> str | None:
+    row = fetch_cotizacion(db, cot_id)
+    if not row:
+        return "Cotización no encontrada"
+    if row["cxc_id"]:
+        return "No se puede eliminar: tiene una cuenta por cobrar vinculada"
+    db.execute("DELETE FROM cotizacion_items WHERE cotizacion_id=?", (cot_id,))
+    db.execute("DELETE FROM cotizaciones WHERE id=?", (cot_id,))
+    db.commit()
+    return None
+
+
+def _pdf_txt(value) -> str:
+    return str(value or "").encode("latin-1", "replace").decode("latin-1")
+
+
+def cotizacion_pdf_bytes(cot, items, empresa_row) -> bytes:
+    if FPDF is None:
+        raise RuntimeError("FPDF no está instalado en el servidor")
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    emp_nombre = (empresa_row["razon_social"] if empresa_row else "Constructora Rio Maipo") or "ERP Master"
+    emp_rut = (empresa_row["rut"] if empresa_row else "") or ""
+    emp_mail = (empresa_row["email"] if empresa_row else "") or ""
+
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 8, _pdf_txt(emp_nombre), ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 5, _pdf_txt(f"RUT {emp_rut}  |  {emp_mail}"), ln=1)
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 8, _pdf_txt(f"Cotizacion {cot['folio']}"), ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 5, _pdf_txt(f"Fecha: {cot['fecha'] or '-'}  |  Estado: {cot['estado']}"), ln=1)
+    pdf.cell(0, 5, _pdf_txt(f"Cliente: {cot['razon_social'] or '-'}  |  RUT {cot['cliente_rut'] or '-'}"), ln=1)
+    pdf.cell(0, 5, _pdf_txt(f"Proyecto: {cot['proyecto'] or '-'}  |  Asunto: {cot['asunto'] or '-'}"), ln=1)
+    pdf.cell(0, 5, _pdf_txt(f"Validez: {cot['validez_dias'] or 30} dias"), ln=1)
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "B", 9)
+    for label, width in [("Descripcion", 80), ("Un", 15), ("Cant", 20), ("P.Unit", 35), ("Total", 35)]:
+        pdf.cell(width, 7, label, border=1)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 9)
+    for it in items:
+        desc = _pdf_txt(it["descripcion"])[:48]
+        pdf.cell(80, 6, desc, border=1)
+        pdf.cell(15, 6, _pdf_txt(it["unidad"]), border=1)
+        pdf.cell(20, 6, f"{float(it['cantidad'] or 0):.2f}", border=1)
+        pdf.cell(35, 6, _pdf_txt(clp(it["precio_unitario"])), border=1)
+        pdf.cell(35, 6, _pdf_txt(clp(it["total"])), border=1)
+        pdf.ln()
+
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, _pdf_txt(f"Subtotal: {clp(cot['subtotal'])}"), ln=1)
+    pdf.cell(0, 6, _pdf_txt(f"IVA: {clp(cot['iva'])}"), ln=1)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _pdf_txt(f"Total: {clp(cot['total'])}"), ln=1)
+    if cot["notas"]:
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 5, _pdf_txt(f"Notas: {cot['notas']}"))
+
+    raw = pdf.output(dest="S")
+    if isinstance(raw, str):
+        return raw.encode("latin-1")
+    return bytes(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -1583,69 +1740,378 @@ elif modulo == "Productos":
 # COTIZACIONES
 # ===========================================================================
 elif modulo == "Cotizaciones":
-    page_header("Cotizaciones", "Flujo completo: crear, enviar, aprobar y generar cuenta por cobrar.")
-    tab_list, tab_new, tab_gestion = st.tabs(["Listado", "Nueva", "Gestión / estados"])
+    page_header("Cotizaciones", "Crear, visualizar, exportar PDF, modificar o eliminar cotizaciones.")
 
-    with tab_list:
-        f_estado = st.multiselect("Filtrar estado", ["borrador", "enviada", "aprobada", "rechazada"], default=[])
+    if "cot_mode" not in st.session_state:
+        st.session_state.cot_mode = "list"
+    if "cot_focus_id" not in st.session_state:
+        st.session_state.cot_focus_id = None
+    if "cot_pdf_id" not in st.session_state:
+        st.session_state.cot_pdf_id = None
+    if "cot_delete_id" not in st.session_state:
+        st.session_state.cot_delete_id = None
+
+    def _cot_back_list():
+        st.session_state.cot_mode = "list"
+        st.session_state.cot_focus_id = None
+        st.session_state.cot_pdf_id = None
+        st.session_state.cot_delete_id = None
+
+    clientes = db.execute(
+        "SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social"
+    ).fetchall()
+    productos = db.execute(
+        "SELECT id, codigo, nombre, unidad, precio FROM productos WHERE activo=1 ORDER BY nombre"
+    ).fetchall()
+    iva_pct = param(db, "iva", 19) / 100
+    validez_def = int(param(db, "validez_cotizacion", 30))
+
+    # ----- PDF download banner -----
+    if st.session_state.cot_pdf_id:
+        cot_pdf = fetch_cotizacion(db, int(st.session_state.cot_pdf_id))
+        if cot_pdf:
+            items_pdf = fetch_cotizacion_items(db, int(st.session_state.cot_pdf_id))
+            try:
+                pdf_bytes = cotizacion_pdf_bytes(cot_pdf, items_pdf, empresa)
+                st.download_button(
+                    f"Descargar PDF {cot_pdf['folio']}",
+                    data=pdf_bytes,
+                    file_name=f"{cot_pdf['folio']}.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                    key=f"dl_pdf_{cot_pdf['id']}",
+                )
+            except Exception as exc:
+                st.error(f"No se pudo generar el PDF: {exc}")
+        if st.button("Cerrar PDF", key="close_pdf"):
+            st.session_state.cot_pdf_id = None
+            st.rerun()
+
+    # ----- Confirm delete -----
+    if st.session_state.cot_delete_id:
+        cot_del = fetch_cotizacion(db, int(st.session_state.cot_delete_id))
+        if cot_del:
+            alert_line(
+                "warn",
+                f"¿Eliminar la cotización <strong>{cot_del['folio']}</strong> de "
+                f"{cot_del['razon_social'] or 'cliente'}?",
+            )
+            d1, d2 = st.columns(2)
+            with d1:
+                if st.button("Confirmar eliminación", type="primary", key="confirm_del_cot"):
+                    err = delete_cotizacion(db, int(st.session_state.cot_delete_id))
+                    st.session_state.cot_delete_id = None
+                    if err:
+                        st.error(err)
+                    else:
+                        st.success("Cotización eliminada")
+                        st.rerun()
+            with d2:
+                if st.button("Cancelar", key="cancel_del_cot"):
+                    st.session_state.cot_delete_id = None
+                    st.rerun()
+
+    mode = st.session_state.cot_mode
+
+    # =====================================================================
+    # LISTADO + CREAR + ACCIONES
+    # =====================================================================
+    if mode == "list":
+        top_a, top_b = st.columns([4, 1])
+        with top_a:
+            f_estado = st.multiselect(
+                "Filtrar estado",
+                ["borrador", "enviada", "aprobada", "rechazada"],
+                default=[],
+            )
+        with top_b:
+            st.write("")
+            st.write("")
+            if st.button("+ Crear", type="primary", use_container_width=True, key="cot_crear"):
+                st.session_state.cot_mode = "new"
+                st.session_state.cot_focus_id = None
+                st.rerun()
+
         sql = """
-            SELECT c.id, c.folio AS Folio, c.fecha AS Fecha, cl.razon_social AS Cliente,
-                   c.asunto AS Asunto, c.proyecto AS Proyecto, c.estado AS Estado, c.total AS Total
+            SELECT c.id, c.folio, c.fecha, cl.razon_social AS cliente,
+                   c.asunto, c.proyecto, c.estado, c.total
             FROM cotizaciones c
             LEFT JOIN clientes cl ON cl.id = c.cliente_id
         """
         if f_estado:
             sql += " WHERE c.estado IN (" + ",".join("?" * len(f_estado)) + ")"
-            df = pd.read_sql_query(sql + " ORDER BY c.id DESC", db, params=f_estado)
+            rows = db.execute(sql + " ORDER BY c.id DESC", f_estado).fetchall()
         else:
-            df = pd.read_sql_query(sql + " ORDER BY c.id DESC", db)
-        if not df.empty:
-            show = df.drop(columns=["id"])
-            show["Total"] = show["Total"].map(clp)
-            st.dataframe(show, use_container_width=True, hide_index=True)
-        else:
-            empty_state("Sin cotizaciones todavía. Crea la primera en la pestaña Nueva.")
+            rows = db.execute(sql + " ORDER BY c.id DESC").fetchall()
 
-    with tab_new:
-        clientes = db.execute("SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social").fetchall()
-        productos = db.execute("SELECT id, codigo, nombre, unidad, precio FROM productos WHERE activo=1 ORDER BY nombre").fetchall()
-        iva_pct = param(db, "iva", 19) / 100
-        validez_def = int(param(db, "validez_cotizacion", 30))
+        if not rows:
+            empty_state("Sin cotizaciones todavía. Usa Crear para emitir la primera.")
+        else:
+            st.markdown('<div class="cot-list">', unsafe_allow_html=True)
+            st.markdown(
+                """
+                <div class="cot-row-head">
+                  <div></div>
+                  <div>Folio</div><div>Cliente</div><div>Proyecto</div>
+                  <div>Fecha</div><div>Estado</div><div>Total</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            for r in rows:
+                cid = int(r["id"])
+                dot = estado_dot_class(r["estado"] or "")
+                st.markdown(
+                    f"""
+                    <div class="cot-row">
+                      <div><span class="cot-dot {dot}"></span></div>
+                      <div class="cot-cell"><strong>{r['folio']}</strong></div>
+                      <div class="cot-cell">{r['cliente'] or '—'}</div>
+                      <div class="cot-cell">{r['proyecto'] or r['asunto'] or '—'}</div>
+                      <div class="cot-cell">{r['fecha'] or '—'}</div>
+                      <div class="cot-cell">{r['estado']}</div>
+                      <div class="cot-cell">{clp(r['total'])}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.markdown('<div class="cot-actions-label">Acciones</div>', unsafe_allow_html=True)
+                a1, a2, a3, a4, _sp = st.columns([1, 1, 1, 1, 4])
+                with a1:
+                    if st.button("Ver", key=f"cot_ver_{cid}", use_container_width=True, help="Visualizar"):
+                        st.session_state.cot_mode = "view"
+                        st.session_state.cot_focus_id = cid
+                        st.rerun()
+                with a2:
+                    if st.button("PDF", key=f"cot_pdf_{cid}", use_container_width=True, help="Descargar PDF"):
+                        st.session_state.cot_pdf_id = cid
+                        st.rerun()
+                with a3:
+                    if st.button("Editar", key=f"cot_edit_{cid}", use_container_width=True, help="Modificar"):
+                        st.session_state.cot_mode = "edit"
+                        st.session_state.cot_focus_id = cid
+                        st.rerun()
+                with a4:
+                    if st.button("Borrar", key=f"cot_del_{cid}", use_container_width=True, help="Eliminar"):
+                        st.session_state.cot_delete_id = cid
+                        st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # =====================================================================
+    # VISUALIZAR
+    # =====================================================================
+    elif mode == "view":
+        if st.button("← Volver al listado", key="back_view"):
+            _cot_back_list()
+            st.rerun()
+        cot = fetch_cotizacion(db, int(st.session_state.cot_focus_id or 0))
+        if not cot:
+            st.error("Cotización no encontrada")
+            _cot_back_list()
+        else:
+            badge = (
+                "ok" if cot["estado"] == "aprobada"
+                else "warn" if cot["estado"] == "enviada"
+                else "muted"
+            )
+            st.markdown(
+                f"""
+                <div class="panel">
+                  <div class="split-title" style="margin:0;">
+                    <h3>{cot['folio']}</h3>
+                    <span class="badge {badge}">{cot['estado']}</span>
+                  </div>
+                  <p style="margin:.45rem 0 0;color:var(--muted);">
+                    {cot['razon_social'] or '—'} · {cot['proyecto'] or '—'} · {cot['asunto'] or 'Sin asunto'} · Total {clp(cot['total'])}
+                  </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Subtotal", clp(cot["subtotal"]))
+            c2.metric("IVA", clp(cot["iva"]))
+            c3.metric("Total", clp(cot["total"]))
+            st.dataframe(
+                pd.read_sql_query(
+                    """
+                    SELECT descripcion AS Descripción, unidad AS Un,
+                           cantidad AS Cant, precio_unitario AS P_Unit, total AS Total
+                    FROM cotizacion_items WHERE cotizacion_id=? ORDER BY id
+                    """,
+                    db,
+                    params=(cot["id"],),
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+            if cot["notas"]:
+                st.info(cot["notas"])
+
+            b1, b2, b3 = st.columns(3)
+            with b1:
+                if st.button("PDF", key="view_pdf", use_container_width=True):
+                    st.session_state.cot_pdf_id = cot["id"]
+                    st.rerun()
+            with b2:
+                if st.button("Modificar", key="view_edit", use_container_width=True):
+                    st.session_state.cot_mode = "edit"
+                    st.session_state.cot_focus_id = cot["id"]
+                    st.rerun()
+            with b3:
+                if st.button("Eliminar", key="view_del", use_container_width=True):
+                    st.session_state.cot_delete_id = cot["id"]
+                    st.session_state.cot_mode = "list"
+                    st.rerun()
+
+            st.markdown("#### Gestión")
+            nuevo_estado = st.selectbox(
+                "Cambiar estado",
+                ["borrador", "enviada", "aprobada", "rechazada"],
+                index=["borrador", "enviada", "aprobada", "rechazada"].index(cot["estado"])
+                if cot["estado"] in ["borrador", "enviada", "aprobada", "rechazada"] else 0,
+            )
+            g1, g2 = st.columns(2)
+            with g1:
+                if st.button("Actualizar estado", key="view_estado"):
+                    db.execute("UPDATE cotizaciones SET estado=? WHERE id=?", (nuevo_estado, cot["id"]))
+                    db.commit()
+                    st.success("Estado actualizado")
+                    st.rerun()
+            with g2:
+                if cot["estado"] == "aprobada" and not cot["cxc_id"]:
+                    if st.button("Generar cuenta por cobrar", type="primary", key="view_cxc"):
+                        dias = int(param(db, "dias_credito", 30))
+                        doc = next_code(db, "cuentas", "documento", "EP")
+                        cur = db.cursor()
+                        cur.execute(
+                            """
+                            INSERT INTO cuentas (documento, cliente_id, cotizacion_id, tipo_doc, concepto,
+                                fecha_emision, fecha_vencimiento, monto, abonado, saldo, estado)
+                            VALUES (?,?,?,?,?,?,?,?,0,?, 'pendiente')
+                            """,
+                            (
+                                doc,
+                                cot["cliente_id"],
+                                cot["id"],
+                                "EP",
+                                f"Desde cotización {cot['folio']}",
+                                date.today().isoformat(),
+                                (date.today() + timedelta(days=dias)).isoformat(),
+                                float(cot["total"]),
+                                float(cot["total"]),
+                            ),
+                        )
+                        cxc_id = cur.lastrowid
+                        cur.execute("UPDATE cotizaciones SET cxc_id=? WHERE id=?", (cxc_id, cot["id"]))
+                        db.commit()
+                        st.success(f"CxC {doc} creada por {clp(cot['total'])}")
+                        st.rerun()
+                elif cot["cxc_id"]:
+                    alert_line("ok", f"Ya tiene CxC vinculada (id {cot['cxc_id']}).")
+                else:
+                    st.caption("Aprueba la cotización para poder generar la CxC.")
+
+    # =====================================================================
+    # NUEVA / EDITAR
+    # =====================================================================
+    elif mode in ("new", "edit"):
+        if st.button("← Volver al listado", key="back_form"):
+            _cot_back_list()
+            st.rerun()
+
+        edit_cot = None
+        edit_items = []
+        if mode == "edit":
+            edit_cot = fetch_cotizacion(db, int(st.session_state.cot_focus_id or 0))
+            if not edit_cot:
+                st.error("Cotización no encontrada")
+                _cot_back_list()
+                st.rerun()
+            edit_items = fetch_cotizacion_items(db, int(edit_cot["id"]))
+            st.subheader(f"Modificar {edit_cot['folio']}")
+        else:
+            st.subheader("Nueva cotización")
+
         if not clientes:
             empty_state("Crea clientes primero para poder emitir cotizaciones.")
         else:
+            cli_ids = [c["id"] for c in clientes]
+            cli_default = 0
+            if edit_cot and edit_cot["cliente_id"] in cli_ids:
+                cli_default = cli_ids.index(edit_cot["cliente_id"])
             with st.form("f_cot"):
                 cliente_id = st.selectbox(
                     "Cliente",
-                    options=[c["id"] for c in clientes],
+                    options=cli_ids,
+                    index=cli_default,
                     format_func=lambda i: next(x["razon_social"] for x in clientes if x["id"] == i),
                 )
-                asunto = st.text_input("Asunto / nombre interno")
-                proyecto = st.text_input("Proyecto / obra", "Condominio Río Maipo")
-                validez = st.number_input("Validez (días)", min_value=1, value=validez_def)
-                estado = st.selectbox("Estado inicial", ["borrador", "enviada"])
+                asunto = st.text_input(
+                    "Asunto / nombre interno",
+                    value=(edit_cot["asunto"] or "") if edit_cot else "",
+                )
+                proyecto = st.text_input(
+                    "Proyecto / obra",
+                    value=(edit_cot["proyecto"] or "Condominio Río Maipo") if edit_cot else "Condominio Río Maipo",
+                )
+                validez = st.number_input(
+                    "Validez (días)",
+                    min_value=1,
+                    value=int(edit_cot["validez_dias"] or validez_def) if edit_cot else validez_def,
+                )
+                estados = ["borrador", "enviada", "aprobada", "rechazada"]
+                est_val = edit_cot["estado"] if edit_cot and edit_cot["estado"] in estados else "borrador"
+                estado = st.selectbox("Estado", estados, index=estados.index(est_val))
                 st.markdown("**Ítems** (elige producto o escribe descripción)")
                 items = []
                 for i in range(4):
+                    base = edit_items[i] if i < len(edit_items) else None
                     cols = st.columns([2.2, 2.2, 0.7, 0.8, 1])
                     with cols[0]:
                         prod_opt = st.selectbox(
                             f"Producto {i+1}",
                             options=[0] + [p["id"] for p in productos],
-                            format_func=lambda x: "— manual —" if x == 0 else next(f"{p['codigo']} · {p['nombre']}" for p in productos if p["id"] == x),
-                            key=f"prod_{i}",
+                            format_func=lambda x: "— manual —" if x == 0 else next(
+                                f"{p['codigo']} · {p['nombre']}" for p in productos if p["id"] == x
+                            ),
+                            key=f"prod_{mode}_{i}",
                         )
                     with cols[1]:
-                        desc = st.text_input("Descripción", key=f"desc_{i}", value="")
+                        desc = st.text_input(
+                            "Descripción",
+                            key=f"desc_{mode}_{i}",
+                            value=(base["descripcion"] if base else ""),
+                        )
                     with cols[2]:
-                        un = st.text_input("Un", value="m2", key=f"un_{i}")
+                        un = st.text_input(
+                            "Un",
+                            value=(base["unidad"] if base else "m2"),
+                            key=f"un_{mode}_{i}",
+                        )
                     with cols[3]:
-                        cant = st.number_input("Cant", min_value=0.0, value=0.0, key=f"cant_{i}")
+                        cant = st.number_input(
+                            "Cant",
+                            min_value=0.0,
+                            value=float(base["cantidad"]) if base else 0.0,
+                            key=f"cant_{mode}_{i}",
+                        )
                     with cols[4]:
-                        pu = st.number_input("P.Unit", min_value=0.0, value=0.0, key=f"pu_{i}")
+                        pu = st.number_input(
+                            "P.Unit",
+                            min_value=0.0,
+                            value=float(base["precio_unitario"]) if base else 0.0,
+                            key=f"pu_{mode}_{i}",
+                        )
                     items.append((prod_opt, desc, un, cant, pu))
-                notas = st.text_area("Notas")
-                guardar = st.form_submit_button("Guardar cotización", type="primary")
+                notas = st.text_area(
+                    "Notas",
+                    value=(edit_cot["notas"] or "") if edit_cot else "",
+                )
+                guardar = st.form_submit_button(
+                    "Guardar cambios" if mode == "edit" else "Guardar cotización",
+                    type="primary",
+                )
 
             if guardar:
                 lineas = []
@@ -1672,121 +2138,68 @@ elif modulo == "Cotizaciones":
                     subtotal = sum(x[5] for x in lineas)
                     iva = round(subtotal * iva_pct)
                     total = subtotal + iva
-                    folio = next_code(db, "cotizaciones", "folio", "COT")
                     cur = db.cursor()
-                    cur.execute(
-                        """
-                        INSERT INTO cotizaciones (folio, cliente_id, asunto, proyecto, estado, fecha, validez_dias, subtotal, iva, total, notas)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                        """,
-                        (
-                            folio,
-                            cliente_id,
-                            asunto.strip() or None,
-                            proyecto.strip() or None,
-                            estado,
-                            date.today().isoformat(),
-                            int(validez),
-                            subtotal,
-                            iva,
-                            total,
-                            notas.strip() or None,
-                        ),
-                    )
-                    cot_id = cur.lastrowid
+                    if mode == "edit" and edit_cot:
+                        cur.execute(
+                            """
+                            UPDATE cotizaciones
+                            SET cliente_id=?, asunto=?, proyecto=?, estado=?, validez_dias=?,
+                                subtotal=?, iva=?, total=?, notas=?
+                            WHERE id=?
+                            """,
+                            (
+                                cliente_id,
+                                asunto.strip() or None,
+                                proyecto.strip() or None,
+                                estado,
+                                int(validez),
+                                subtotal,
+                                iva,
+                                total,
+                                notas.strip() or None,
+                                edit_cot["id"],
+                            ),
+                        )
+                        cur.execute("DELETE FROM cotizacion_items WHERE cotizacion_id=?", (edit_cot["id"],))
+                        cot_id = edit_cot["id"]
+                        folio = edit_cot["folio"]
+                    else:
+                        folio = next_code(db, "cotizaciones", "folio", "COT")
+                        cur.execute(
+                            """
+                            INSERT INTO cotizaciones
+                            (folio, cliente_id, asunto, proyecto, estado, fecha, validez_dias,
+                             subtotal, iva, total, notas)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                            """,
+                            (
+                                folio,
+                                cliente_id,
+                                asunto.strip() or None,
+                                proyecto.strip() or None,
+                                estado,
+                                date.today().isoformat(),
+                                int(validez),
+                                subtotal,
+                                iva,
+                                total,
+                                notas.strip() or None,
+                            ),
+                        )
+                        cot_id = cur.lastrowid
                     cur.executemany(
                         """
-                        INSERT INTO cotizacion_items (cotizacion_id, producto_id, descripcion, unidad, cantidad, precio_unitario, total)
+                        INSERT INTO cotizacion_items
+                        (cotizacion_id, producto_id, descripcion, unidad, cantidad, precio_unitario, total)
                         VALUES (?,?,?,?,?,?,?)
                         """,
                         [(cot_id, *ln) for ln in lineas],
                     )
                     db.commit()
-                    st.success(f"{folio} creada · total {clp(total)} (IVA {iva_pct*100:.0f}%)")
+                    st.success(f"{folio} guardada · total {clp(total)}")
+                    st.session_state.cot_mode = "view"
+                    st.session_state.cot_focus_id = cot_id
                     st.rerun()
-
-    with tab_gestion:
-        rows = db.execute(
-            """
-            SELECT c.*, cl.razon_social
-            FROM cotizaciones c LEFT JOIN clientes cl ON cl.id=c.cliente_id
-            ORDER BY c.id DESC
-            """
-        ).fetchall()
-        if not rows:
-            empty_state("Sin cotizaciones para gestionar.")
-        else:
-            sel = st.selectbox(
-                "Cotización",
-                options=[r["id"] for r in rows],
-                format_func=lambda i: next(f"{r['folio']} · {r['razon_social'] or '—'} · {r['estado']} · {clp(r['total'])}" for r in rows if r["id"] == i),
-            )
-            cot = next(r for r in rows if r["id"] == sel)
-            st.markdown(
-                f"""
-                <div class="panel">
-                  <div class="split-title" style="margin:0;">
-                    <h3>{cot['folio']}</h3>
-                    <span class="badge {'ok' if cot['estado']=='aprobada' else 'warn' if cot['estado']=='enviada' else 'muted'}">{cot['estado']}</span>
-                  </div>
-                  <p style="margin:.45rem 0 0;color:var(--muted);">{cot['proyecto'] or '—'} · {cot['asunto'] or 'Sin asunto'} · Total {clp(cot['total'])}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.dataframe(
-                pd.read_sql_query(
-                    "SELECT descripcion, unidad, cantidad, precio_unitario, total FROM cotizacion_items WHERE cotizacion_id=?",
-                    db,
-                    params=(sel,),
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
-            nuevo_estado = st.selectbox(
-                "Cambiar estado",
-                ["borrador", "enviada", "aprobada", "rechazada"],
-                index=["borrador", "enviada", "aprobada", "rechazada"].index(cot["estado"]) if cot["estado"] in ["borrador", "enviada", "aprobada", "rechazada"] else 0,
-            )
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Actualizar estado"):
-                    db.execute("UPDATE cotizaciones SET estado=? WHERE id=?", (nuevo_estado, sel))
-                    db.commit()
-                    st.success("Estado actualizado")
-                    st.rerun()
-            with col2:
-                if cot["estado"] == "aprobada" and not cot["cxc_id"]:
-                    if st.button("Generar cuenta por cobrar", type="primary"):
-                        dias = int(param(db, "dias_credito", 30))
-                        doc = next_code(db, "cuentas", "documento", "EP")
-                        cur = db.cursor()
-                        cur.execute(
-                            """
-                            INSERT INTO cuentas (documento, cliente_id, cotizacion_id, tipo_doc, concepto, fecha_emision, fecha_vencimiento, monto, abonado, saldo, estado)
-                            VALUES (?,?,?,?,?,?,?,?,0,?, 'pendiente')
-                            """,
-                            (
-                                doc,
-                                cot["cliente_id"],
-                                sel,
-                                "EP",
-                                f"Desde cotización {cot['folio']}",
-                                date.today().isoformat(),
-                                (date.today() + timedelta(days=dias)).isoformat(),
-                                float(cot["total"]),
-                                float(cot["total"]),
-                            ),
-                        )
-                        cxc_id = cur.lastrowid
-                        cur.execute("UPDATE cotizaciones SET cxc_id=? WHERE id=?", (cxc_id, sel))
-                        db.commit()
-                        st.success(f"CxC {doc} creada por {clp(cot['total'])}")
-                        st.rerun()
-                elif cot["cxc_id"]:
-                    alert_line("ok", f"Ya tiene CxC vinculada (id {cot['cxc_id']}).")
-                else:
-                    st.caption("Aprueba la cotización para poder generar la CxC.")
 
 # ===========================================================================
 # CUENTAS POR COBRAR
