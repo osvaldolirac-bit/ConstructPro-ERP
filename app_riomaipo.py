@@ -455,6 +455,19 @@ def inject_styles() -> None:
   .cot-dot.muted { background: #2b2f36; }
   .cot-dot.danger { background: #b42318; }
 
+  .cxc-estado { font-weight: 800; font-size: .82rem; text-transform: capitalize; }
+  .cxc-estado.pendiente { color: #b42318; }
+  .cxc-estado.abonado, .cxc-estado.parcial { color: #0b6e99; }
+  .cxc-estado.pagado { color: #1f8a65; }
+  .cxc-total-row {
+    background: #eef3f9;
+    border-top: 1px solid var(--line);
+    padding: .65rem .2rem;
+    font-weight: 800;
+    color: var(--brand);
+    margin-top: .35rem;
+  }
+
   .rm-footer-mark {
     margin: 2.4rem 0 .4rem;
     padding: 1.1rem 0 .2rem;
@@ -1426,6 +1439,105 @@ def aging_bucket(venc: date | None, hoy: date | None = None) -> str:
     return "+60 días mora"
 
 
+def cxc_estado_label(estado: str | None) -> str:
+    e = (estado or "").lower()
+    if e in ("pagado", "pagada"):
+        return "Pagado"
+    if e in ("parcial", "abonado", "abonada"):
+        return "Abonado"
+    return "Pendiente"
+
+
+def cxc_estado_class(estado: str | None) -> str:
+    e = (estado or "").lower()
+    if e in ("pagado", "pagada"):
+        return "pagado"
+    if e in ("parcial", "abonado", "abonada"):
+        return "abonado"
+    return "pendiente"
+
+
+def cxc_tipo_label(tipo: str | None, cotizacion_id=None) -> str:
+    if cotizacion_id:
+        return "Cotización"
+    t = (tipo or "").upper()
+    if t in ("FAC", "FACTURA", "FA"):
+        return "Factura"
+    if t in ("ND", "NOTA"):
+        return "Nota de débito"
+    if t in ("EP",):
+        return "EP"
+    return tipo or "—"
+
+
+def fmt_dmy(s: str | None) -> str:
+    if not s:
+        return "—"
+    d = dparse(str(s))
+    return d.strftime("%d/%m/%Y") if d else str(s)
+
+
+def list_cxc_documentos(c: sqlite3.Connection, busqueda: str | None = None):
+    sql = """
+        SELECT cu.id, cu.documento, cu.tipo_doc, cu.concepto,
+               cu.fecha_emision, cu.fecha_vencimiento,
+               cu.monto, cu.abonado, cu.saldo, cu.estado,
+               cu.cotizacion_id, cl.razon_social AS cliente
+        FROM cuentas cu
+        LEFT JOIN clientes cl ON cl.id = cu.cliente_id
+        WHERE 1=1
+    """
+    params: list = []
+    if busqueda and busqueda.strip():
+        like = f"%{busqueda.strip()}%"
+        sql += " AND (cl.razon_social LIKE ? OR cu.documento LIKE ? OR cu.concepto LIKE ?)"
+        params.extend([like, like, like])
+    sql += " ORDER BY cu.id DESC"
+    return c.execute(sql, params).fetchall()
+
+
+def cxc_kpis(docs) -> dict:
+    total_docs = len(docs)
+    total_monto = sum(float(d["monto"] or 0) for d in docs)
+    pend = [d for d in docs if cxc_estado_class(d["estado"]) == "pendiente"]
+    abon = [d for d in docs if cxc_estado_class(d["estado"]) == "abonado"]
+    pag = [d for d in docs if cxc_estado_class(d["estado"]) == "pagado"]
+    return {
+        "total_docs": total_docs,
+        "total_monto": total_monto,
+        "pend_n": len(pend),
+        "pend_m": sum(float(d["monto"] or 0) for d in pend),
+        "abon_n": len(abon),
+        "abon_m": sum(float(d["monto"] or 0) for d in abon),
+        "pag_n": len(pag),
+        "pag_m": sum(float(d["monto"] or 0) for d in pag),
+        "tasa": (len(pag) / total_docs * 100) if total_docs else 0.0,
+    }
+
+
+def fetch_cuenta(c: sqlite3.Connection, cuenta_id: int):
+    return c.execute(
+        """
+        SELECT cu.*, cl.razon_social
+        FROM cuentas cu
+        LEFT JOIN clientes cl ON cl.id = cu.cliente_id
+        WHERE cu.id=?
+        """,
+        (cuenta_id,),
+    ).fetchone()
+
+
+def delete_cuenta(c: sqlite3.Connection, cuenta_id: int) -> str | None:
+    row = c.execute("SELECT id FROM cuentas WHERE id=?", (cuenta_id,)).fetchone()
+    if not row:
+        return "Documento no encontrado"
+    c.execute("UPDATE cotizaciones SET cxc_id=NULL WHERE cxc_id=?", (cuenta_id,))
+    c.execute("DELETE FROM abonos WHERE cuenta_id=?", (cuenta_id,))
+    c.execute("DELETE FROM cuentas WHERE id=?", (cuenta_id,))
+    c.commit()
+    return None
+
+
 init_db()
 
 if "auth_ok" not in st.session_state:
@@ -2364,118 +2476,454 @@ elif modulo == "Cotizaciones":
                     st.rerun()
 
 # ===========================================================================
-# CUENTAS POR COBRAR
+# CUENTAS POR COBRAR (estilo SOLUERP)
 # ===========================================================================
 elif modulo == "Cuentas por cobrar":
-    page_header("Cuentas por cobrar", "Cartera con mora, aging y registro de abonos en un solo flujo.")
-    tab_list, tab_new, tab_abono = st.tabs(["Cartera", "Nuevo documento", "Registrar abono"])
+    page_header("Cuentas por cobrar", "Documentos, saldos y cobranza con acciones rápidas.")
 
-    hoy = date.today()
-    with tab_list:
-        filtro = st.selectbox("Vista", ["Todas", "Con saldo", "Vencidas", "Al día"])
-        df = pd.read_sql_query(
-            """
-            SELECT cu.id, cu.documento AS Documento, cl.razon_social AS Cliente, cu.tipo_doc AS Tipo,
-                   cu.fecha_emision AS Emisión, cu.fecha_vencimiento AS Vence,
-                   cu.monto AS Total, cu.abonado AS Abonos, cu.saldo AS Saldo, cu.estado AS Estado
-            FROM cuentas cu
-            LEFT JOIN clientes cl ON cl.id = cu.cliente_id
-            ORDER BY cu.id DESC
-            """,
-            db,
-        )
-        if not df.empty:
-            moras = []
-            aging = []
-            for _, r in df.iterrows():
-                ve = dparse(r["Vence"])
-                saldo = float(r["Saldo"] or 0)
-                if saldo <= 0 or not ve:
-                    moras.append(0)
-                    aging.append("pagado" if saldo <= 0 else "sin fecha")
-                else:
-                    moras.append(max(0, (hoy - ve).days))
-                    aging.append(aging_bucket(ve, hoy))
-            df["Días mora"] = moras
-            df["Aging"] = aging
-            view = df.copy()
-            if filtro == "Con saldo":
-                view = view[view["Saldo"] > 0]
-            elif filtro == "Vencidas":
-                view = view[view["Días mora"] > 0]
-            elif filtro == "Al día":
-                view = view[(view["Saldo"] > 0) & (view["Días mora"] == 0)]
-            show = view.drop(columns=["id"])
-            for col in ["Total", "Abonos", "Saldo"]:
-                show[col] = show[col].map(clp)
-            st.dataframe(show, use_container_width=True, hide_index=True)
-            kpi_cards([("Saldo filtrado", clp(float(view["Saldo"].sum())), "warn" if float(view["Saldo"].sum()) > 0 else "ok")])
-        else:
-            empty_state("Sin documentos en cartera.")
+    if "cxc_mode" not in st.session_state:
+        st.session_state.cxc_mode = "list"
+    if "cxc_focus_id" not in st.session_state:
+        st.session_state.cxc_focus_id = None
+    if "cxc_delete_id" not in st.session_state:
+        st.session_state.cxc_delete_id = None
+    if "cxc_busqueda" not in st.session_state:
+        st.session_state.cxc_busqueda = ""
 
-    with tab_new:
-        clientes = db.execute("SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social").fetchall()
-        dias = int(param(db, "dias_credito", 30))
-        with st.form("f_cxc"):
-            cliente_id = st.selectbox(
-                "Cliente",
-                options=[c["id"] for c in clientes] if clientes else [],
-                format_func=lambda i: next(c["razon_social"] for c in clientes if c["id"] == i),
+    def _cxc_back_list():
+        st.session_state.cxc_mode = "list"
+        st.session_state.cxc_focus_id = None
+        st.session_state.cxc_delete_id = None
+
+    clientes = db.execute(
+        "SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social"
+    ).fetchall()
+    dias_credito = int(param(db, "dias_credito", 30))
+
+    # ----- Confirm delete -----
+    if st.session_state.cxc_delete_id:
+        cxc_del = fetch_cuenta(db, int(st.session_state.cxc_delete_id))
+        if cxc_del:
+            alert_line(
+                "warn",
+                f"¿Eliminar el documento <strong>{cxc_del['documento']}</strong> de "
+                f"{cxc_del['razon_social'] or 'cliente'}?",
             )
-            tipo = st.selectbox("Tipo documento", ["EP", "FAC", "ND"])
-            concepto = st.text_input("Concepto", "Estado de pago")
-            monto = st.number_input("Monto", min_value=1.0, value=1000000.0, step=1000.0)
-            venc = st.date_input("Vencimiento", value=date.today() + timedelta(days=dias))
-            if st.form_submit_button("Guardar", type="primary") and clientes:
-                doc = next_code(db, "cuentas", "documento", "EP")
-                db.execute(
-                    """
-                    INSERT INTO cuentas (documento, cliente_id, tipo_doc, concepto, fecha_emision, fecha_vencimiento, monto, abonado, saldo, estado)
-                    VALUES (?,?,?,?,?,?,?,0,?, 'pendiente')
-                    """,
-                    (
-                        doc,
-                        cliente_id,
-                        tipo,
-                        concepto,
-                        date.today().isoformat(),
-                        venc.isoformat(),
-                        float(monto),
-                        float(monto),
-                    ),
-                )
-                db.commit()
-                st.success(f"Documento {doc} creado")
-                st.rerun()
+            d1, d2 = st.columns(2)
+            with d1:
+                if st.button("Confirmar eliminación", type="primary", key="confirm_del_cxc"):
+                    err = delete_cuenta(db, int(st.session_state.cxc_delete_id))
+                    st.session_state.cxc_delete_id = None
+                    if err:
+                        st.error(err)
+                    else:
+                        st.success("Documento eliminado")
+                        st.rerun()
+            with d2:
+                if st.button("Cancelar", key="cancel_del_cxc"):
+                    st.session_state.cxc_delete_id = None
+                    st.rerun()
 
-    with tab_abono:
-        abiertas = db.execute(
-            """
-            SELECT cu.id, cu.documento, cu.saldo, cl.razon_social
-            FROM cuentas cu LEFT JOIN clientes cl ON cl.id=cu.cliente_id
-            WHERE cu.saldo > 0 ORDER BY cu.id DESC
-            """
-        ).fetchall()
-        if not abiertas:
-            alert_line("ok", "<strong>No hay saldos pendientes.</strong> Toda la cartera está cobrada.")
+    mode = st.session_state.cxc_mode
+
+    # =====================================================================
+    # LISTADO
+    # =====================================================================
+    if mode == "list":
+        busq = st.session_state.get("cxc_busqueda", "").strip()
+        docs = list_cxc_documentos(db, busqueda=busq or None)
+        kpis = cxc_kpis(docs)
+
+        st.markdown(
+            f"""
+            <div class="cot-kpi-grid">
+              <div class="cot-kpi ing">
+                <div class="label">Total documentos</div>
+                <div class="value">{kpis['total_docs']} Documentos</div>
+                <div class="hint">{clp(kpis['total_monto'])}</div>
+              </div>
+              <div class="cot-kpi rec">
+                <div class="label">Pendientes</div>
+                <div class="value">{kpis['pend_n']} Documentos</div>
+                <div class="hint">{clp(kpis['pend_m'])}</div>
+              </div>
+              <div class="cot-kpi apr">
+                <div class="label">Abonados</div>
+                <div class="value">{kpis['abon_n']} Documentos</div>
+                <div class="hint">{clp(kpis['abon_m'])}</div>
+              </div>
+              <div class="cot-kpi an">
+                <div class="label">Pagados</div>
+                <div class="value">{kpis['pag_n']} Documentos</div>
+                <div class="hint">{clp(kpis['pag_m'])}</div>
+              </div>
+              <div class="cot-kpi mes">
+                <div class="label">Tasa de Cobranza</div>
+                <div class="value">{kpis['tasa']:.1f} %</div>
+                <div class="hint">{kpis['pag_n']} de {kpis['total_docs']}</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown('<div class="cot-filters">', unsafe_allow_html=True)
+        f1, f2, f3 = st.columns([2.4, 0.9, 1])
+        with f1:
+            razon_q = st.text_input(
+                "Razón social",
+                value=st.session_state.cxc_busqueda,
+                placeholder="Buscar por cliente…",
+                key="cxc_razon_input",
+            )
+        with f2:
+            st.write("")
+            st.write("")
+            if st.button("Buscar", use_container_width=True, key="cxc_buscar"):
+                st.session_state.cxc_busqueda = razon_q or ""
+                st.rerun()
+        with f3:
+            st.write("")
+            st.write("")
+            if st.button("+ Nuevo", type="primary", use_container_width=True, key="cxc_crear"):
+                st.session_state.cxc_mode = "new"
+                st.session_state.cxc_focus_id = None
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.caption(f"Mostrando {len(docs)} documentos")
+
+        if not docs:
+            empty_state("No hay documentos en cartera. Prueba + Nuevo.")
         else:
-            with st.form("f_abono"):
-                cuenta_id = st.selectbox(
-                    "Documento",
-                    options=[a["id"] for a in abiertas],
-                    format_func=lambda i: next(f"{a['documento']} · {a['razon_social']} · saldo {clp(a['saldo'])}" for a in abiertas if a["id"] == i),
+            head = st.columns([0.35, 1.7, 0.75, 0.85, 0.85, 0.85, 0.95, 0.95, 0.95, 0.85, 1.5])
+            headers = [
+                "#", "Cliente", "T.Doc", "Núm.", "F.Emisión", "F.Vence",
+                "Total", "Abonos", "Saldo", "Estado", "Acciones",
+            ]
+            for col, title in zip(head, headers):
+                col.markdown(
+                    f"<div style='font-size:.68rem;font-weight:800;text-transform:uppercase;"
+                    f"letter-spacing:.04em;color:#5b6b7c;padding:.2rem 0;'>{title}</div>",
+                    unsafe_allow_html=True,
                 )
-                monto = st.number_input("Monto abono", min_value=1.0, step=1000.0)
-                medio = st.selectbox("Medio", ["transferencia", "cheque", "efectivo", "tarjeta", "otro"])
+
+            sum_total = sum_abonos = sum_saldo = 0.0
+            for idx, r in enumerate(docs, start=1):
+                cid = int(r["id"])
+                est_cls = cxc_estado_class(r["estado"])
+                est_lbl = cxc_estado_label(r["estado"])
+                tipo_lbl = cxc_tipo_label(r["tipo_doc"], r["cotizacion_id"])
+                total_v = float(r["monto"] or 0)
+                abon_v = float(r["abonado"] or 0)
+                saldo_v = float(r["saldo"] or 0)
+                sum_total += total_v
+                sum_abonos += abon_v
+                sum_saldo += saldo_v
+                cols = st.columns(
+                    [0.35, 1.7, 0.75, 0.85, 0.85, 0.85, 0.95, 0.95, 0.95, 0.85, 1.5],
+                    vertical_alignment="center",
+                )
+                zebra = "#fafcff" if idx % 2 == 0 else "#ffffff"
+                vals = [
+                    str(idx),
+                    r["cliente"] or "—",
+                    tipo_lbl,
+                    r["documento"] or "—",
+                    fmt_dmy(r["fecha_emision"]),
+                    fmt_dmy(r["fecha_vencimiento"]),
+                    clp(total_v),
+                    clp(abon_v),
+                    clp(saldo_v),
+                ]
+                for i, v in enumerate(vals):
+                    with cols[i]:
+                        if i == 3 and r["cotizacion_id"]:
+                            st.markdown(
+                                f"<div class='cot-num' style='background:{zebra};padding:.3rem 0;'>{v}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        elif i == 1:
+                            st.markdown(
+                                f"<div style='background:{zebra};padding:.3rem 0;font-weight:700;'>{v}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown(
+                                f"<div style='background:{zebra};padding:.3rem 0;'>{v}</div>",
+                                unsafe_allow_html=True,
+                            )
+                with cols[9]:
+                    st.markdown(
+                        f"<div class='cxc-estado {est_cls}' style='background:{zebra};padding:.3rem 0;'>{est_lbl}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with cols[10]:
+                    a1, a2, a3 = st.columns(3)
+                    with a1:
+                        if st.button("Ver", key=f"cxc_ver_{cid}", use_container_width=True, help="Visualizar"):
+                            st.session_state.cxc_mode = "view"
+                            st.session_state.cxc_focus_id = cid
+                            st.rerun()
+                    with a2:
+                        if st.button("Edit", key=f"cxc_edit_{cid}", use_container_width=True, help="Modificar"):
+                            st.session_state.cxc_mode = "edit"
+                            st.session_state.cxc_focus_id = cid
+                            st.rerun()
+                    with a3:
+                        if st.button("Del", key=f"cxc_del_{cid}", use_container_width=True, help="Eliminar"):
+                            st.session_state.cxc_delete_id = cid
+                            st.rerun()
+
+            tcols = st.columns([0.35, 1.7, 0.75, 0.85, 0.85, 0.85, 0.95, 0.95, 0.95, 0.85, 1.5])
+            with tcols[5]:
+                st.markdown("<div class='cxc-total-row'>Totales</div>", unsafe_allow_html=True)
+            with tcols[6]:
+                st.markdown(f"<div class='cxc-total-row'>{clp(sum_total)}</div>", unsafe_allow_html=True)
+            with tcols[7]:
+                st.markdown(f"<div class='cxc-total-row'>{clp(sum_abonos)}</div>", unsafe_allow_html=True)
+            with tcols[8]:
+                st.markdown(f"<div class='cxc-total-row'>{clp(sum_saldo)}</div>", unsafe_allow_html=True)
+
+    # =====================================================================
+    # VISUALIZAR
+    # =====================================================================
+    elif mode == "view":
+        if st.button("← Volver al listado", key="cxc_back_view"):
+            _cxc_back_list()
+            st.rerun()
+        cuenta = fetch_cuenta(db, int(st.session_state.cxc_focus_id or 0))
+        if not cuenta:
+            st.error("Documento no encontrado")
+            _cxc_back_list()
+        else:
+            est_cls = cxc_estado_class(cuenta["estado"])
+            badge = "ok" if est_cls == "pagado" else ("warn" if est_cls == "abonado" else "muted")
+            st.markdown(
+                f"""
+                <div class="panel">
+                  <div class="split-title" style="margin:0;">
+                    <h3>{cuenta['documento']}</h3>
+                    <span class="badge {badge}">{cxc_estado_label(cuenta['estado'])}</span>
+                  </div>
+                  <p style="margin:.45rem 0 0;color:var(--muted);">
+                    {cuenta['razon_social'] or '—'} ·
+                    {cxc_tipo_label(cuenta['tipo_doc'], cuenta['cotizacion_id'])} ·
+                    {cuenta['concepto'] or 'Sin concepto'}
+                  </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total", clp(cuenta["monto"]))
+            m2.metric("Abonos", clp(cuenta["abonado"]))
+            m3.metric("Saldo", clp(cuenta["saldo"]))
+            m4.metric("Vence", fmt_dmy(cuenta["fecha_vencimiento"]))
+
+            abonos_df = pd.read_sql_query(
+                """
+                SELECT fecha AS Fecha, monto AS Monto, medio AS Medio, COALESCE(nota,'') AS Nota
+                FROM abonos WHERE cuenta_id=? ORDER BY id DESC
+                """,
+                db,
+                params=(cuenta["id"],),
+            )
+            st.markdown("#### Abonos")
+            if abonos_df.empty:
+                empty_state("Sin abonos registrados.")
+            else:
+                show = abonos_df.copy()
+                show["Fecha"] = show["Fecha"].map(fmt_dmy)
+                show["Monto"] = show["Monto"].map(clp)
+                st.dataframe(show, use_container_width=True, hide_index=True)
+
+            b1, b2, b3, b4 = st.columns(4)
+            with b1:
+                if st.button("Editar", key="cxc_view_edit", use_container_width=True):
+                    st.session_state.cxc_mode = "edit"
+                    st.session_state.cxc_focus_id = cuenta["id"]
+                    st.rerun()
+            with b2:
+                if float(cuenta["saldo"] or 0) > 0:
+                    if st.button("Registrar abono", type="primary", key="cxc_view_abono", use_container_width=True):
+                        st.session_state.cxc_mode = "abono"
+                        st.session_state.cxc_focus_id = cuenta["id"]
+                        st.rerun()
+            with b3:
+                if st.button("Eliminar", key="cxc_view_del", use_container_width=True):
+                    st.session_state.cxc_delete_id = cuenta["id"]
+                    st.session_state.cxc_mode = "list"
+                    st.rerun()
+            with b4:
+                if st.button("Volver", key="cxc_view_back2", use_container_width=True):
+                    _cxc_back_list()
+                    st.rerun()
+
+    # =====================================================================
+    # NUEVO / EDITAR
+    # =====================================================================
+    elif mode in ("new", "edit"):
+        if st.button("← Volver al listado", key="cxc_back_form"):
+            _cxc_back_list()
+            st.rerun()
+
+        edit_row = None
+        if mode == "edit":
+            edit_row = fetch_cuenta(db, int(st.session_state.cxc_focus_id or 0))
+            if not edit_row:
+                st.error("Documento no encontrado")
+                _cxc_back_list()
+                st.rerun()
+            st.subheader(f"Modificar {edit_row['documento']}")
+        else:
+            st.subheader("Nuevo documento")
+
+        if not clientes:
+            empty_state("Crea clientes primero para emitir documentos.")
+        else:
+            cli_ids = [c["id"] for c in clientes]
+            cli_default = 0
+            if edit_row and edit_row["cliente_id"] in cli_ids:
+                cli_default = cli_ids.index(edit_row["cliente_id"])
+            tipos = ["EP", "FAC", "ND"]
+            tipo_default = 0
+            if edit_row and (edit_row["tipo_doc"] or "").upper() in tipos:
+                tipo_default = tipos.index((edit_row["tipo_doc"] or "").upper())
+            em_default = dparse(edit_row["fecha_emision"]) if edit_row else date.today()
+            ve_default = (
+                dparse(edit_row["fecha_vencimiento"])
+                if edit_row
+                else date.today() + timedelta(days=dias_credito)
+            )
+            with st.form("f_cxc"):
+                cliente_id = st.selectbox(
+                    "Cliente",
+                    options=cli_ids,
+                    index=cli_default,
+                    format_func=lambda i: next(x["razon_social"] for x in clientes if x["id"] == i),
+                )
+                tipo = st.selectbox("Tipo documento", tipos, index=tipo_default)
+                concepto = st.text_input(
+                    "Concepto",
+                    value=(edit_row["concepto"] or "Estado de pago") if edit_row else "Estado de pago",
+                )
+                monto = st.number_input(
+                    "Monto",
+                    min_value=1.0,
+                    value=float(edit_row["monto"]) if edit_row else 1000000.0,
+                    step=1000.0,
+                )
+                emision = st.date_input("Fecha emisión", value=em_default or date.today())
+                venc = st.date_input("Fecha vencimiento", value=ve_default or date.today())
+                guardar = st.form_submit_button(
+                    "Guardar cambios" if mode == "edit" else "Guardar documento",
+                    type="primary",
+                )
+
+            if guardar:
+                if mode == "edit" and edit_row:
+                    db.execute(
+                        """
+                        UPDATE cuentas
+                        SET cliente_id=?, tipo_doc=?, concepto=?, fecha_emision=?,
+                            fecha_vencimiento=?, monto=?
+                        WHERE id=?
+                        """,
+                        (
+                            cliente_id,
+                            tipo,
+                            concepto.strip() or None,
+                            emision.isoformat(),
+                            venc.isoformat(),
+                            float(monto),
+                            edit_row["id"],
+                        ),
+                    )
+                    recalc_cuenta(db, int(edit_row["id"]))
+                    db.commit()
+                    st.success(f"{edit_row['documento']} actualizado")
+                    st.session_state.cxc_mode = "view"
+                    st.session_state.cxc_focus_id = edit_row["id"]
+                    st.rerun()
+                else:
+                    pref = tipo if tipo in ("EP", "FAC", "ND") else "EP"
+                    doc = next_code(db, "cuentas", "documento", pref)
+                    cur = db.cursor()
+                    cur.execute(
+                        """
+                        INSERT INTO cuentas
+                        (documento, cliente_id, tipo_doc, concepto, fecha_emision,
+                         fecha_vencimiento, monto, abonado, saldo, estado)
+                        VALUES (?,?,?,?,?,?,?,0,?, 'pendiente')
+                        """,
+                        (
+                            doc,
+                            cliente_id,
+                            tipo,
+                            concepto.strip() or None,
+                            emision.isoformat(),
+                            venc.isoformat(),
+                            float(monto),
+                            float(monto),
+                        ),
+                    )
+                    new_id = cur.lastrowid
+                    db.commit()
+                    st.success(f"Documento {doc} creado")
+                    st.session_state.cxc_mode = "view"
+                    st.session_state.cxc_focus_id = new_id
+                    st.rerun()
+
+    # =====================================================================
+    # REGISTRAR ABONO
+    # =====================================================================
+    elif mode == "abono":
+        if st.button("← Volver", key="cxc_back_abono"):
+            st.session_state.cxc_mode = "view"
+            st.rerun()
+        cuenta = fetch_cuenta(db, int(st.session_state.cxc_focus_id or 0))
+        if not cuenta:
+            st.error("Documento no encontrado")
+            _cxc_back_list()
+        elif float(cuenta["saldo"] or 0) <= 0:
+            alert_line("ok", "Este documento ya está pagado.")
+            if st.button("Volver al documento"):
+                st.session_state.cxc_mode = "view"
+                st.rerun()
+        else:
+            st.subheader(f"Abono · {cuenta['documento']}")
+            st.caption(
+                f"{cuenta['razon_social'] or '—'} · Saldo {clp(cuenta['saldo'])}"
+            )
+            with st.form("f_abono_cxc"):
+                monto = st.number_input(
+                    "Monto abono",
+                    min_value=1.0,
+                    max_value=float(cuenta["saldo"]),
+                    value=float(cuenta["saldo"]),
+                    step=1000.0,
+                )
+                medio = st.selectbox(
+                    "Medio",
+                    ["transferencia", "cheque", "efectivo", "tarjeta", "otro"],
+                )
                 nota = st.text_input("Nota")
                 if st.form_submit_button("Registrar abono", type="primary"):
                     db.execute(
                         "INSERT INTO abonos (cuenta_id, fecha, monto, medio, nota) VALUES (?,?,?,?,?)",
-                        (cuenta_id, date.today().isoformat(), float(monto), medio, nota),
+                        (
+                            cuenta["id"],
+                            date.today().isoformat(),
+                            float(monto),
+                            medio,
+                            nota.strip() or None,
+                        ),
                     )
-                    recalc_cuenta(db, cuenta_id)
+                    recalc_cuenta(db, int(cuenta["id"]))
                     db.commit()
                     st.success("Abono registrado")
+                    st.session_state.cxc_mode = "view"
                     st.rerun()
 
 # ===========================================================================
