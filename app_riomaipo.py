@@ -20,41 +20,287 @@ DB_PATH = BASE_DIR / "data" / "riomaipo_erp.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 st.set_page_config(
-    page_title="ERP Río Maipo",
-    page_icon="🏗️",
+    page_title="ERP Master · Río Maipo",
+    page_icon="◆",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ---------------------------------------------------------------------------
-# Estilos
-# ---------------------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-      .rm-hero {
-        background: linear-gradient(120deg, #102833 0%, #1a3d4d 55%, #245a4a 100%);
-        border: 1px solid rgba(212,163,92,.35);
-        border-radius: 16px; padding: 1.1rem 1.3rem; margin-bottom: .9rem; color: #f4efe6;
-      }
-      .rm-hero h1 { margin: 0; font-size: 1.65rem; font-weight: 700; }
-      .rm-hero p { margin: .3rem 0 0; opacity: .88; }
-      .rm-chip {
-        display:inline-block; margin-top:.55rem; padding:.2rem .65rem; border-radius:999px;
-        background:rgba(212,163,92,.18); border:1px solid rgba(212,163,92,.4); font-size:.78rem;
-      }
-      .alert-box {
-        border-radius: 12px; padding: .75rem 1rem; margin: .35rem 0;
-        border: 1px solid rgba(255,255,255,.12);
-      }
-      .alert-danger { background: rgba(224,122,109,.15); }
-      .alert-warn { background: rgba(226,183,101,.15); }
-      .alert-ok { background: rgba(125,207,182,.12); }
-      div[data-testid="stMetricValue"] { font-size: 1.35rem; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+
+def inject_styles() -> None:
+    st.markdown(
+        """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650;9..144,700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg0: #08141b;
+    --bg1: #0f2430;
+    --bg2: #163544;
+    --panel: rgba(255,255,255,0.045);
+    --panel-strong: rgba(255,255,255,0.07);
+    --line: rgba(233,220,196,0.14);
+    --text: #f5f1e8;
+    --muted: #a9b7bf;
+    --accent: #d4a35c;
+    --accent-2: #5fb3a6;
+    --ok: #7dcfb6;
+    --warn: #e2b765;
+    --danger: #e07a6d;
+    --shadow: 0 18px 50px rgba(0,0,0,.28);
+    --radius: 18px;
+    --font-display: "Fraunces", Georgia, serif;
+    --font-body: "Sora", "Segoe UI", sans-serif;
+  }
+
+  html, body, [data-testid="stAppViewContainer"], .stApp {
+    background:
+      radial-gradient(1100px 620px at 8% -12%, rgba(212,163,92,.20), transparent 55%),
+      radial-gradient(900px 520px at 92% 0%, rgba(95,179,166,.16), transparent 50%),
+      linear-gradient(165deg, var(--bg0), var(--bg1) 42%, #101f28 100%) !important;
+    color: var(--text);
+    font-family: var(--font-body) !important;
+  }
+
+  [data-testid="stHeader"] { background: transparent !important; }
+  #MainMenu, footer, [data-testid="stToolbar"] { visibility: hidden; height: 0; }
+  .block-container { padding-top: 1.2rem !important; padding-bottom: 2.5rem !important; max-width: 1280px; }
+
+  section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, rgba(8,20,27,.96), rgba(15,36,48,.92)) !important;
+    border-right: 1px solid var(--line);
+  }
+  section[data-testid="stSidebar"] * { font-family: var(--font-body) !important; }
+  section[data-testid="stSidebar"] .stRadio > label { display: none; }
+  section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: .65rem .85rem;
+    margin-bottom: .25rem;
+    transition: .2s ease;
+  }
+  section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
+    background: var(--panel);
+    transform: translateX(3px);
+  }
+  section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label[data-checked="true"],
+  section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:has(input:checked) {
+    background: linear-gradient(120deg, rgba(212,163,92,.20), rgba(95,179,166,.12));
+    border-color: rgba(212,163,92,.35);
+  }
+
+  h1,h2,h3,h4 { font-family: var(--font-display) !important; font-weight: 600 !important; letter-spacing: -.01em; }
+  p, label, span, div { font-family: var(--font-body); }
+  [data-testid="stMarkdownContainer"] p { color: var(--muted); }
+
+  .rm-hero {
+    position: relative; overflow: hidden;
+    background:
+      linear-gradient(125deg, rgba(16,40,51,.92), rgba(22,53,68,.88) 55%, rgba(36,90,74,.75));
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 1.35rem 1.5rem 1.25rem;
+    margin-bottom: 1.1rem;
+    box-shadow: var(--shadow);
+    animation: rise .55s ease both;
+  }
+  .rm-hero::after {
+    content: ""; position: absolute; inset: auto -10% -40% auto; width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(212,163,92,.22), transparent 65%);
+    pointer-events: none;
+  }
+  .rm-kicker {
+    display:inline-block; font-size:.72rem; letter-spacing:.18em; text-transform:uppercase;
+    color: var(--accent); margin-bottom: .35rem; font-weight: 600;
+  }
+  .rm-hero h1 { margin: 0; font-size: clamp(1.7rem, 2.5vw, 2.35rem); color: var(--text); line-height: 1.1; }
+  .rm-hero p { margin: .4rem 0 0; color: var(--muted); max-width: 62ch; }
+  .rm-chip {
+    display:inline-flex; gap:.45rem; align-items:center; margin-top:.7rem;
+    padding:.28rem .7rem; border-radius:999px; font-size:.78rem; color: var(--text);
+    background: rgba(212,163,92,.14); border: 1px solid rgba(212,163,92,.35);
+  }
+
+  .rm-page-head { margin: .2rem 0 1rem; animation: fade-up .45s ease both; }
+  .rm-page-head h2 {
+    margin: 0; font-size: clamp(1.45rem, 2vw, 1.9rem); color: var(--text);
+  }
+  .rm-page-head p { margin: .3rem 0 0; color: var(--muted); }
+
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem;
+    margin: 0 0 1.1rem; animation: fade-up .5s ease both;
+  }
+  .kpi {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 1rem 1.05rem; box-shadow: var(--shadow); transition: transform .2s ease, border-color .2s ease;
+  }
+  .kpi:hover { transform: translateY(-2px); border-color: rgba(212,163,92,.35); }
+  .kpi span { display:block; color: var(--muted); font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
+  .kpi strong {
+    display:block; margin-top: .4rem; font-family: var(--font-display);
+    font-size: 1.45rem; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums;
+  }
+  .kpi.danger strong { color: #ffc2b8; }
+  .kpi.warn strong { color: #ffe0a3; }
+  .kpi.ok strong { color: #b8f0dd; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 1rem 1.1rem; margin-bottom: .9rem; box-shadow: var(--shadow);
+    animation: fade-up .5s ease both;
+  }
+  .panel h3 {
+    margin: 0 0 .75rem; font-size: 1.15rem; color: var(--text);
+  }
+
+  .alert-box {
+    border-radius: 14px; padding: .85rem 1rem; margin: .4rem 0;
+    border: 1px solid var(--line); animation: fade-up .35s ease both;
+  }
+  .alert-danger { background: rgba(224,122,109,.14); border-color: rgba(224,122,109,.35); color: #ffd4cd; }
+  .alert-warn { background: rgba(226,183,101,.14); border-color: rgba(226,183,101,.35); color: #ffe7b8; }
+  .alert-ok { background: rgba(125,207,182,.12); border-color: rgba(125,207,182,.35); color: #d7fff1; }
+
+  .badge {
+    display:inline-flex; align-items:center; padding: .18rem .55rem; border-radius: 999px;
+    font-size: .75rem; border: 1px solid var(--line); background: rgba(255,255,255,.04);
+  }
+  .badge.ok { color: var(--ok); border-color: rgba(125,207,182,.4); }
+  .badge.warn { color: var(--warn); border-color: rgba(226,183,101,.4); }
+  .badge.danger { color: var(--danger); border-color: rgba(224,122,109,.4); }
+  .badge.muted { color: var(--muted); }
+
+  .sb-brand { padding: .4rem .2rem 1rem; animation: rise .5s ease both; }
+  .sb-brand .k { color: var(--accent); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; }
+  .sb-brand h2 { margin: .25rem 0 0; font-family: var(--font-display); font-size: 1.55rem; color: var(--text); line-height: 1.05; }
+  .sb-brand p { margin: .35rem 0 0; color: var(--muted); font-size: .84rem; }
+
+  div[data-testid="stMetric"] {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: .75rem .9rem; box-shadow: var(--shadow);
+  }
+  div[data-testid="stMetricValue"] { font-family: var(--font-display) !important; font-size: 1.4rem !important; }
+  div[data-testid="stMetricLabel"] { color: var(--muted) !important; }
+
+  .stTabs [data-baseweb="tab-list"] {
+    gap: .35rem; background: transparent; border-bottom: 1px solid var(--line);
+  }
+  .stTabs [data-baseweb="tab"] {
+    background: transparent; border-radius: 10px 10px 0 0; color: var(--muted);
+    padding: .6rem 1rem;
+  }
+  .stTabs [aria-selected="true"] {
+    background: var(--panel-strong) !important; color: var(--text) !important;
+    border-bottom: 2px solid var(--accent) !important;
+  }
+
+  .stTextInput input, .stNumberInput input, .stDateInput input, .stTextArea textarea,
+  .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div {
+    background: rgba(0,0,0,.22) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 12px !important;
+    color: var(--text) !important;
+  }
+  .stButton > button {
+    border-radius: 12px !important; border: 1px solid var(--line) !important;
+    background: var(--panel-strong) !important; color: var(--text) !important;
+    font-weight: 600 !important; transition: .18s ease !important;
+  }
+  .stButton > button:hover { transform: translateY(-1px); border-color: rgba(212,163,92,.45) !important; }
+  .stButton > button[kind="primary"], .stButton > button[data-testid="baseButton-primary"] {
+    background: linear-gradient(135deg, var(--accent), #b8843f) !important;
+    color: #1a1208 !important; border: none !important;
+  }
+  [data-testid="stForm"] {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 1rem; box-shadow: var(--shadow);
+  }
+  [data-testid="stDataFrame"] {
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: rgba(0,0,0,.12);
+  }
+  .stAlert { border-radius: 14px !important; }
+
+  .empty-state {
+    border: 1px dashed rgba(233,220,196,.28);
+    border-radius: 16px;
+    padding: 1.4rem 1.2rem;
+    text-align: center;
+    color: var(--muted);
+    background: rgba(255,255,255,.02);
+    margin: .4rem 0 1rem;
+  }
+  .split-title {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+    margin: .2rem 0 .85rem;
+  }
+  .split-title h3 {
+    margin: 0; font-family: var(--font-display); font-size: 1.15rem; color: var(--text);
+  }
+  .split-title span { color: var(--muted); font-size: .82rem; }
+  .stat-pill {
+    display:inline-flex; align-items:center; gap:.4rem;
+    padding:.35rem .75rem; border-radius:999px; font-size:.78rem;
+    background: rgba(95,179,166,.12); border: 1px solid rgba(95,179,166,.3); color: #d7fff1;
+  }
+  .chart-wrap {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: .85rem 1rem 1rem; margin-bottom: .9rem; box-shadow: var(--shadow);
+  }
+  .chart-wrap h3 { margin: 0 0 .65rem; font-size: 1.1rem; color: var(--text); }
+  .soft-hr {
+    border: 0; height: 1px; margin: 1.1rem 0;
+    background: linear-gradient(90deg, transparent, rgba(233,220,196,.28), transparent);
+  }
+  [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
+    font-family: var(--font-display) !important; color: var(--text) !important;
+  }
+  .stCaption, [data-testid="stCaptionContainer"] { color: var(--muted) !important; }
+  iframe { border-radius: 12px; }
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def page_header(title: str, subtitle: str = "") -> None:
+    sub = f"<p>{subtitle}</p>" if subtitle else ""
+    st.markdown(
+        f'<div class="rm-page-head"><h2>{title}</h2>{sub}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def kpi_cards(items: list[tuple[str, str, str]]) -> None:
+    # items: (label, value, tone) tone in '', 'ok', 'warn', 'danger'
+    cards = "".join(
+        f'<article class="kpi {tone}"><span>{label}</span><strong>{value}</strong></article>'
+        for label, value, tone in items
+    )
+    st.markdown(f'<div class="kpi-grid">{cards}</div>', unsafe_allow_html=True)
+
+
+def alert_line(nivel: str, msg: str) -> None:
+    st.markdown(f'<div class="alert-box alert-{nivel}">{msg}</div>', unsafe_allow_html=True)
+
+
+def empty_state(msg: str) -> None:
+    st.markdown(f'<div class="empty-state">{msg}</div>', unsafe_allow_html=True)
+
+
+inject_styles()
 
 
 # ---------------------------------------------------------------------------
@@ -320,16 +566,8 @@ empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
 # ---------------------------------------------------------------------------
 # Shell
 # ---------------------------------------------------------------------------
-st.markdown(
-    f"""
-    <div class="rm-hero">
-      <h1>ERP Master · {empresa['razon_social'] if empresa else 'Río Maipo'}</h1>
-      <p>Gestión comercial y cobranza — inspirado en SOLUERP, con control y alertas mejoradas</p>
-      <span class="rm-chip">erpmaster.cl/riomaipo · RUT {empresa['rut'] if empresa else '—'}</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+razon = empresa["razon_social"] if empresa else "Constructora Río Maipo"
+rut_emp = empresa["rut"] if empresa else "—"
 
 MODULOS = [
     "Dashboard",
@@ -341,21 +579,60 @@ MODULOS = [
     "Administración",
 ]
 with st.sidebar:
-    st.markdown("### Menú")
+    st.markdown(
+        f"""
+        <div class="sb-brand">
+          <div class="k">ERP Master</div>
+          <h2>Río Maipo</h2>
+          <p>{razon}<br/>RUT {rut_emp}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown('<hr class="soft-hr">', unsafe_allow_html=True)
     modulo = st.radio("Navegación", MODULOS, label_visibility="collapsed")
-    st.caption("Mejoras vs SOLUERP: aging, alertas, flujo cotización→CxC, vista 360")
+    st.markdown('<hr class="soft-hr">', unsafe_allow_html=True)
+    st.caption("Control comercial · cobranza · catálogo · vista 360")
+    st.markdown(
+        '<span class="stat-pill">erpmaster.cl/riomaipo</span>',
+        unsafe_allow_html=True,
+    )
+
+if modulo == "Dashboard":
+    st.markdown(
+        f"""
+        <div class="rm-hero">
+          <div class="rm-kicker">ERP Master</div>
+          <h1>{razon}</h1>
+          <p>Panel de gestión comercial y cobranza con alertas, aging y embudo de cotizaciones.</p>
+          <span class="rm-chip">RUT {rut_emp} · actualizado {date.today().strftime('%d/%m/%Y')}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        f"""
+        <div class="rm-hero" style="padding:1rem 1.25rem;">
+          <div class="rm-kicker">ERP Master · Río Maipo</div>
+          <h1 style="font-size:clamp(1.35rem,2vw,1.75rem);">{modulo}</h1>
+          <p style="margin-top:.25rem;">{razon}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # ===========================================================================
 # DASHBOARD
 # ===========================================================================
 if modulo == "Dashboard":
-    st.subheader("Dashboard de gestión")
+    page_header("Dashboard de gestión", "Salud de cartera, embudo comercial y prioridades del día.")
     hoy = date.today()
-    iva = param(db, "iva", 19)
 
     cotas = db.execute("SELECT estado, COUNT(*) n, COALESCE(SUM(total),0) t FROM cotizaciones GROUP BY estado").fetchall()
     por_estado = {r["estado"]: (r["n"], r["t"]) for r in cotas}
     cuentas = db.execute("SELECT * FROM cuentas").fetchall()
+    n_clientes = db.execute("SELECT COUNT(*) n FROM clientes WHERE activo=1").fetchone()["n"]
     saldo_total = sum(float(x["saldo"]) for x in cuentas)
     vencido = 0.0
     por_vencer_7 = 0.0
@@ -368,15 +645,20 @@ if modulo == "Dashboard":
         elif ve and 0 <= (ve - hoy).days <= 7:
             por_vencer_7 += float(x["saldo"])
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Saldo por cobrar", clp(saldo_total))
-    c2.metric("Vencido (mora)", clp(vencido))
-    c3.metric("Vence en 7 días", clp(por_vencer_7))
-    c4.metric("Cotiz. aprobadas", por_estado.get("aprobada", (0, 0))[0])
-    c5.metric("Cotiz. enviadas", por_estado.get("enviada", (0, 0))[0])
+    kpi_cards(
+        [
+            ("Saldo por cobrar", clp(saldo_total), ""),
+            ("Vencido (mora)", clp(vencido), "danger" if vencido > 0 else "ok"),
+            ("Vence en 7 días", clp(por_vencer_7), "warn" if por_vencer_7 > 0 else "ok"),
+            ("Cotiz. aprobadas", str(por_estado.get("aprobada", (0, 0))[0]), "ok"),
+            ("Clientes activos", str(n_clientes), ""),
+        ]
+    )
 
-    # Alertas
-    st.markdown("#### Alertas de gestión")
+    st.markdown(
+        '<div class="split-title"><h3>Alertas de gestión</h3><span>Prioriza mora y cotizaciones sin respuesta</span></div>',
+        unsafe_allow_html=True,
+    )
     alertas = []
     for x in cuentas:
         if float(x["saldo"]) <= 0:
@@ -386,11 +668,11 @@ if modulo == "Dashboard":
         nombre = cli["razon_social"] if cli else "Cliente"
         if ve and ve < hoy:
             alertas.append(
-                ("danger", f"Mora { (hoy-ve).days } días · {x['documento']} · {nombre} · saldo {clp(x['saldo'])}")
+                ("danger", f"<strong>Mora {(hoy-ve).days} días</strong> · {x['documento']} · {nombre} · saldo {clp(x['saldo'])}")
             )
         elif ve and 0 <= (ve - hoy).days <= 7:
             alertas.append(
-                ("warn", f"Por vencer en {(ve-hoy).days} días · {x['documento']} · {nombre} · {clp(x['saldo'])}")
+                ("warn", f"<strong>Por vencer en {(ve-hoy).days} días</strong> · {x['documento']} · {nombre} · {clp(x['saldo'])}")
             )
     for cot in db.execute("SELECT * FROM cotizaciones WHERE estado IN ('enviada','borrador')").fetchall():
         f = dparse(cot["fecha"])
@@ -398,16 +680,18 @@ if modulo == "Dashboard":
             continue
         vence = f + timedelta(days=int(cot["validez_dias"] or 30))
         if vence < hoy and cot["estado"] == "enviada":
-            alertas.append(("warn", f"Cotización {cot['folio']} vencida sin respuesta (validez {cot['validez_dias']}d)"))
+            alertas.append(
+                ("warn", f"<strong>Cotización {cot['folio']}</strong> vencida sin respuesta (validez {cot['validez_dias']}d)")
+            )
     if not alertas:
-        st.markdown('<div class="alert-box alert-ok">Sin alertas críticas. Cartera al día.</div>', unsafe_allow_html=True)
+        alert_line("ok", "<strong>Sin alertas críticas.</strong> La cartera está al día.")
     else:
         for nivel, msg in alertas[:12]:
-            st.markdown(f'<div class="alert-box alert-{nivel}">⚠ {msg}</div>', unsafe_allow_html=True)
+            alert_line(nivel, msg)
 
     col_a, col_b = st.columns(2)
     with col_a:
-        st.markdown("#### Embudo de cotizaciones")
+        st.markdown('<div class="chart-wrap"><h3>Embudo de cotizaciones</h3>', unsafe_allow_html=True)
         funnel = pd.DataFrame(
             [
                 {"Etapa": "Borrador", "Cantidad": por_estado.get("borrador", (0, 0))[0]},
@@ -416,19 +700,31 @@ if modulo == "Dashboard":
                 {"Etapa": "Rechazada", "Cantidad": por_estado.get("rechazada", (0, 0))[0]},
             ]
         )
-        st.bar_chart(funnel.set_index("Etapa"))
+        st.bar_chart(funnel.set_index("Etapa"), color="#5fb3a6")
+        st.markdown("</div>", unsafe_allow_html=True)
     with col_b:
-        st.markdown("#### Aging cuentas por cobrar")
-        buckets = {"por vencer": 0.0, "vence hoy": 0.0, "1-30 días mora": 0.0, "31-60 días mora": 0.0, "+60 días mora": 0.0, "sin fecha": 0.0}
+        st.markdown('<div class="chart-wrap"><h3>Aging cuentas por cobrar</h3>', unsafe_allow_html=True)
+        buckets = {
+            "por vencer": 0.0,
+            "vence hoy": 0.0,
+            "1-30 días mora": 0.0,
+            "31-60 días mora": 0.0,
+            "+60 días mora": 0.0,
+            "sin fecha": 0.0,
+        }
         for x in cuentas:
             if float(x["saldo"]) <= 0:
                 continue
             b = aging_bucket(dparse(x["fecha_vencimiento"]), hoy)
             buckets[b] = buckets.get(b, 0) + float(x["saldo"])
         aging_df = pd.DataFrame({"Tramo": list(buckets.keys()), "Saldo": list(buckets.values())})
-        st.bar_chart(aging_df.set_index("Tramo"))
+        st.bar_chart(aging_df.set_index("Tramo"), color="#d4a35c")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("#### Top clientes por deuda")
+    st.markdown(
+        '<div class="split-title"><h3>Top clientes por deuda</h3><span>Concentración de riesgo de cobranza</span></div>',
+        unsafe_allow_html=True,
+    )
     top = pd.read_sql_query(
         """
         SELECT cl.razon_social AS Cliente,
@@ -447,13 +743,13 @@ if modulo == "Dashboard":
         top["Saldo"] = top["Saldo"].map(clp)
         st.dataframe(top, use_container_width=True, hide_index=True)
     else:
-        st.info("No hay saldos abiertos.")
+        empty_state("No hay saldos abiertos en cartera.")
 
 # ===========================================================================
 # CLIENTES
 # ===========================================================================
 elif modulo == "Clientes":
-    st.subheader("Clientes")
+    page_header("Clientes", "Maestro comercial con búsqueda rápida y vista 360 de deuda y cotizaciones.")
     tab_list, tab_new, tab_360 = st.tabs(["Listado", "Nuevo / editar", "Vista 360"])
 
     with tab_list:
@@ -466,7 +762,10 @@ elif modulo == "Clientes":
             params = [like, like, like, like]
         sql += " ORDER BY razon_social"
         df = pd.read_sql_query(sql, db, params=params)
-        st.dataframe(df.drop(columns=["id"], errors="ignore"), use_container_width=True, hide_index=True)
+        if df.empty:
+            empty_state("No hay clientes para mostrar. Crea el primero en la pestaña Nuevo / editar.")
+        else:
+            st.dataframe(df.drop(columns=["id"], errors="ignore"), use_container_width=True, hide_index=True)
 
     with tab_new:
         clientes = db.execute("SELECT id, razon_social FROM clientes ORDER BY razon_social").fetchall()
@@ -510,10 +809,17 @@ elif modulo == "Clientes":
             cid = st.selectbox("Cliente", options=[c["id"] for c in clientes], format_func=lambda i: next(c["razon_social"] for c in clientes if c["id"] == i), key="c360")
             deuda = db.execute("SELECT COALESCE(SUM(saldo),0) s FROM cuentas WHERE cliente_id=?", (cid,)).fetchone()["s"]
             ncot = db.execute("SELECT COUNT(*) n FROM cotizaciones WHERE cliente_id=?", (cid,)).fetchone()["n"]
-            a, b = st.columns(2)
-            a.metric("Deuda abierta", clp(deuda))
-            b.metric("Cotizaciones", ncot)
-            st.markdown("**Cotizaciones**")
+            kpi_cards(
+                [
+                    ("Deuda abierta", clp(deuda), "danger" if float(deuda) > 0 else "ok"),
+                    ("Cotizaciones", str(ncot), ""),
+                    ("Estado", "Con saldo" if float(deuda) > 0 else "Al día", "warn" if float(deuda) > 0 else "ok"),
+                ]
+            )
+            st.markdown(
+                '<div class="split-title"><h3>Cotizaciones</h3><span>Historial comercial del cliente</span></div>',
+                unsafe_allow_html=True,
+            )
             st.dataframe(
                 pd.read_sql_query(
                     "SELECT folio, fecha, estado, total FROM cotizaciones WHERE cliente_id=? ORDER BY id DESC",
@@ -523,7 +829,10 @@ elif modulo == "Clientes":
                 use_container_width=True,
                 hide_index=True,
             )
-            st.markdown("**Cuentas por cobrar**")
+            st.markdown(
+                '<div class="split-title"><h3>Cuentas por cobrar</h3><span>Documentos y saldos</span></div>',
+                unsafe_allow_html=True,
+            )
             st.dataframe(
                 pd.read_sql_query(
                     "SELECT documento, fecha_emision, fecha_vencimiento, monto, abonado, saldo, estado FROM cuentas WHERE cliente_id=? ORDER BY id DESC",
@@ -538,27 +847,27 @@ elif modulo == "Clientes":
 # PROVEEDORES
 # ===========================================================================
 elif modulo == "Proveedores":
-    st.subheader("Proveedores")
-    st.dataframe(
-        pd.read_sql_query(
-            "SELECT rut AS RUT, razon_social AS Proveedor, contacto, telefono, email, CASE activo WHEN 1 THEN 'activo' ELSE 'inactivo' END AS estado FROM proveedores ORDER BY razon_social",
-            db,
-        ),
-        use_container_width=True,
-        hide_index=True,
+    page_header("Proveedores", "Registro de proveedores para compras y control de contrapartes.")
+    df_prov = pd.read_sql_query(
+        "SELECT rut AS RUT, razon_social AS Proveedor, contacto, telefono, email, CASE activo WHEN 1 THEN 'activo' ELSE 'inactivo' END AS estado FROM proveedores ORDER BY razon_social",
+        db,
     )
+    if df_prov.empty:
+        empty_state("Aún no hay proveedores. Crea el primero con el formulario de abajo.")
+    else:
+        st.dataframe(df_prov, use_container_width=True, hide_index=True)
     with st.form("f_prov"):
         st.markdown("**Nuevo proveedor**")
         rut = st.text_input("RUT")
-        razon = st.text_input("Razón social")
+        razon_p = st.text_input("Razón social")
         contacto = st.text_input("Contacto")
         telefono = st.text_input("Teléfono")
         email = st.text_input("Email")
-        if st.form_submit_button("Crear") and razon.strip():
+        if st.form_submit_button("Crear", type="primary") and razon_p.strip():
             try:
                 db.execute(
                     "INSERT INTO proveedores (rut, razon_social, contacto, telefono, email) VALUES (?,?,?,?,?)",
-                    (rut.strip(), razon.strip(), contacto, telefono, email),
+                    (rut.strip(), razon_p.strip(), contacto, telefono, email),
                 )
                 db.commit()
                 st.success("Proveedor creado")
@@ -570,23 +879,24 @@ elif modulo == "Proveedores":
 # PRODUCTOS
 # ===========================================================================
 elif modulo == "Productos":
-    st.subheader("Productos / partidas")
-    st.caption("Catálogo usable al armar cotizaciones (mejora vs cargar todo a mano).")
-    st.dataframe(
-        pd.read_sql_query(
-            "SELECT codigo AS Código, nombre AS Nombre, unidad AS Un, precio AS Precio, CASE activo WHEN 1 THEN 'activo' ELSE 'inactivo' END AS Estado FROM productos ORDER BY nombre",
-            db,
-        ),
-        use_container_width=True,
-        hide_index=True,
+    page_header("Productos / partidas", "Catálogo reutilizable al armar cotizaciones, con precio y unidad.")
+    df_prod = pd.read_sql_query(
+        "SELECT codigo AS Código, nombre AS Nombre, unidad AS Un, precio AS Precio, CASE activo WHEN 1 THEN 'activo' ELSE 'inactivo' END AS Estado FROM productos ORDER BY nombre",
+        db,
     )
+    if df_prod.empty:
+        empty_state("Sin productos. Agrega partidas para cotizar más rápido.")
+    else:
+        show_prod = df_prod.copy()
+        show_prod["Precio"] = show_prod["Precio"].map(clp)
+        st.dataframe(show_prod, use_container_width=True, hide_index=True)
     with st.form("f_prod"):
         st.markdown("**Nuevo producto**")
         codigo = st.text_input("Código", placeholder="RAD-M2")
         nombre = st.text_input("Nombre")
         unidad = st.text_input("Unidad", "m2")
         precio = st.number_input("Precio venta", min_value=0.0, step=100.0)
-        if st.form_submit_button("Crear") and nombre.strip():
+        if st.form_submit_button("Crear", type="primary") and nombre.strip():
             try:
                 db.execute(
                     "INSERT INTO productos (codigo, nombre, unidad, precio) VALUES (?,?,?,?)",
@@ -602,7 +912,7 @@ elif modulo == "Productos":
 # COTIZACIONES
 # ===========================================================================
 elif modulo == "Cotizaciones":
-    st.subheader("Cotizaciones")
+    page_header("Cotizaciones", "Flujo completo: crear, enviar, aprobar y generar cuenta por cobrar.")
     tab_list, tab_new, tab_gestion = st.tabs(["Listado", "Nueva", "Gestión / estados"])
 
     with tab_list:
@@ -623,7 +933,7 @@ elif modulo == "Cotizaciones":
             show["Total"] = show["Total"].map(clp)
             st.dataframe(show, use_container_width=True, hide_index=True)
         else:
-            st.info("Sin cotizaciones")
+            empty_state("Sin cotizaciones todavía. Crea la primera en la pestaña Nueva.")
 
     with tab_new:
         clientes = db.execute("SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social").fetchall()
@@ -631,7 +941,7 @@ elif modulo == "Cotizaciones":
         iva_pct = param(db, "iva", 19) / 100
         validez_def = int(param(db, "validez_cotizacion", 30))
         if not clientes:
-            st.warning("Crea clientes primero")
+            empty_state("Crea clientes primero para poder emitir cotizaciones.")
         else:
             with st.form("f_cot"):
                 cliente_id = st.selectbox(
@@ -664,7 +974,7 @@ elif modulo == "Cotizaciones":
                         pu = st.number_input("P.Unit", min_value=0.0, value=0.0, key=f"pu_{i}")
                     items.append((prod_opt, desc, un, cant, pu))
                 notas = st.text_area("Notas")
-                guardar = st.form_submit_button("Guardar cotización")
+                guardar = st.form_submit_button("Guardar cotización", type="primary")
 
             if guardar:
                 lineas = []
@@ -733,7 +1043,7 @@ elif modulo == "Cotizaciones":
             """
         ).fetchall()
         if not rows:
-            st.info("Sin cotizaciones")
+            empty_state("Sin cotizaciones para gestionar.")
         else:
             sel = st.selectbox(
                 "Cotización",
@@ -741,7 +1051,18 @@ elif modulo == "Cotizaciones":
                 format_func=lambda i: next(f"{r['folio']} · {r['razon_social'] or '—'} · {r['estado']} · {clp(r['total'])}" for r in rows if r["id"] == i),
             )
             cot = next(r for r in rows if r["id"] == sel)
-            st.write(f"**{cot['folio']}** · {cot['proyecto'] or ''} · {cot['asunto'] or ''}")
+            st.markdown(
+                f"""
+                <div class="panel">
+                  <div class="split-title" style="margin:0;">
+                    <h3>{cot['folio']}</h3>
+                    <span class="badge {'ok' if cot['estado']=='aprobada' else 'warn' if cot['estado']=='enviada' else 'muted'}">{cot['estado']}</span>
+                  </div>
+                  <p style="margin:.45rem 0 0;color:var(--muted);">{cot['proyecto'] or '—'} · {cot['asunto'] or 'Sin asunto'} · Total {clp(cot['total'])}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             st.dataframe(
                 pd.read_sql_query(
                     "SELECT descripcion, unidad, cantidad, precio_unitario, total FROM cotizacion_items WHERE cotizacion_id=?",
@@ -792,7 +1113,7 @@ elif modulo == "Cotizaciones":
                         st.success(f"CxC {doc} creada por {clp(cot['total'])}")
                         st.rerun()
                 elif cot["cxc_id"]:
-                    st.info(f"Ya tiene CxC vinculada (id {cot['cxc_id']})")
+                    alert_line("ok", f"Ya tiene CxC vinculada (id {cot['cxc_id']}).")
                 else:
                     st.caption("Aprueba la cotización para poder generar la CxC.")
 
@@ -800,7 +1121,7 @@ elif modulo == "Cotizaciones":
 # CUENTAS POR COBRAR
 # ===========================================================================
 elif modulo == "Cuentas por cobrar":
-    st.subheader("Cuentas por cobrar / Cobranza")
+    page_header("Cuentas por cobrar", "Cartera con mora, aging y registro de abonos en un solo flujo.")
     tab_list, tab_new, tab_abono = st.tabs(["Cartera", "Nuevo documento", "Registrar abono"])
 
     hoy = date.today()
@@ -842,9 +1163,9 @@ elif modulo == "Cuentas por cobrar":
             for col in ["Total", "Abonos", "Saldo"]:
                 show[col] = show[col].map(clp)
             st.dataframe(show, use_container_width=True, hide_index=True)
-            st.metric("Saldo filtrado", clp(float(view["Saldo"].sum())))
+            kpi_cards([("Saldo filtrado", clp(float(view["Saldo"].sum())), "warn" if float(view["Saldo"].sum()) > 0 else "ok")])
         else:
-            st.info("Sin documentos")
+            empty_state("Sin documentos en cartera.")
 
     with tab_new:
         clientes = db.execute("SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social").fetchall()
@@ -859,7 +1180,7 @@ elif modulo == "Cuentas por cobrar":
             concepto = st.text_input("Concepto", "Estado de pago")
             monto = st.number_input("Monto", min_value=1.0, value=1000000.0, step=1000.0)
             venc = st.date_input("Vencimiento", value=date.today() + timedelta(days=dias))
-            if st.form_submit_button("Guardar") and clientes:
+            if st.form_submit_button("Guardar", type="primary") and clientes:
                 doc = next_code(db, "cuentas", "documento", "EP")
                 db.execute(
                     """
@@ -890,7 +1211,7 @@ elif modulo == "Cuentas por cobrar":
             """
         ).fetchall()
         if not abiertas:
-            st.success("No hay saldos pendientes")
+            alert_line("ok", "<strong>No hay saldos pendientes.</strong> Toda la cartera está cobrada.")
         else:
             with st.form("f_abono"):
                 cuenta_id = st.selectbox(
@@ -901,7 +1222,7 @@ elif modulo == "Cuentas por cobrar":
                 monto = st.number_input("Monto abono", min_value=1.0, step=1000.0)
                 medio = st.selectbox("Medio", ["transferencia", "cheque", "efectivo", "tarjeta", "otro"])
                 nota = st.text_input("Nota")
-                if st.form_submit_button("Registrar abono"):
+                if st.form_submit_button("Registrar abono", type="primary"):
                     db.execute(
                         "INSERT INTO abonos (cuenta_id, fecha, monto, medio, nota) VALUES (?,?,?,?,?)",
                         (cuenta_id, date.today().isoformat(), float(monto), medio, nota),
@@ -915,23 +1236,23 @@ elif modulo == "Cuentas por cobrar":
 # ADMINISTRACIÓN
 # ===========================================================================
 else:
-    st.subheader("Administración")
+    page_header("Administración", "Datos de la empresa y parámetros operativos del ERP.")
     tab_emp, tab_par = st.tabs(["Mi empresa", "Parámetros"])
 
     with tab_emp:
         e = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
         with st.form("f_emp"):
             rut = st.text_input("RUT", e["rut"] or "")
-            razon = st.text_input("Razón social", e["razon_social"] or "")
+            razon_f = st.text_input("Razón social", e["razon_social"] or "")
             telefono = st.text_input("Teléfono", e["telefono"] or "")
             email = st.text_input("Email", e["email"] or "")
             direccion = st.text_input("Dirección", e["direccion"] or "")
             region = st.text_input("Región", e["region"] or "")
             pais = st.text_input("País", e["pais"] or "Chile")
-            if st.form_submit_button("Guardar empresa"):
+            if st.form_submit_button("Guardar empresa", type="primary"):
                 db.execute(
                     """UPDATE empresa SET rut=?, razon_social=?, telefono=?, email=?, direccion=?, region=?, pais=? WHERE id=1""",
-                    (rut, razon, telefono, email, direccion, region, pais),
+                    (rut, razon_f, telefono, email, direccion, region, pais),
                 )
                 db.commit()
                 st.success("Empresa actualizada")
@@ -943,7 +1264,7 @@ else:
         with st.form("f_par"):
             clave = st.selectbox("Parámetro", options=params["clave"].tolist())
             valor = st.text_input("Nuevo valor", value=str(params.loc[params.clave == clave, "valor"].values[0]))
-            if st.form_submit_button("Actualizar"):
+            if st.form_submit_button("Actualizar", type="primary"):
                 db.execute("UPDATE parametros SET valor=? WHERE clave=?", (valor.strip(), clave))
                 db.commit()
                 st.success("Parámetro actualizado")
