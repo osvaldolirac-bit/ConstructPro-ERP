@@ -661,7 +661,7 @@ if modulo == "Dashboard":
         <div class="rm-hero">
           <div class="rm-kicker">ERP Master</div>
           <h1>{razon}</h1>
-          <p>Panel comercial y cobranza: saldos, mora, embudo de cotizaciones y prioridades del día.</p>
+          <p>Panel comercial y cobranza: saldos, mora, embudo de cotizaciones y aging.</p>
           <span class="rm-chip">RUT {rut_emp} · actualizado {date.today().strftime('%d/%m/%Y')}</span>
         </div>
         """,
@@ -683,7 +683,7 @@ else:
 # DASHBOARD
 # ===========================================================================
 if modulo == "Dashboard":
-    page_header("Dashboard de gestión", "Salud de cartera, embudo comercial y prioridades del día.")
+    page_header("Dashboard de gestión", "Salud de cartera, embudo comercial y aging de cobranza.")
     hoy = date.today()
 
     cotas = db.execute("SELECT estado, COUNT(*) n, COALESCE(SUM(total),0) t FROM cotizaciones GROUP BY estado").fetchall()
@@ -711,40 +711,6 @@ if modulo == "Dashboard":
             ("Clientes activos", str(n_clientes), ""),
         ]
     )
-
-    st.markdown(
-        '<div class="split-title"><h3>Alertas de gestión</h3><span>Prioriza mora y cotizaciones sin respuesta</span></div>',
-        unsafe_allow_html=True,
-    )
-    alertas = []
-    for x in cuentas:
-        if float(x["saldo"]) <= 0:
-            continue
-        ve = dparse(x["fecha_vencimiento"])
-        cli = db.execute("SELECT razon_social FROM clientes WHERE id=?", (x["cliente_id"],)).fetchone()
-        nombre = cli["razon_social"] if cli else "Cliente"
-        if ve and ve < hoy:
-            alertas.append(
-                ("danger", f"<strong>Mora {(hoy-ve).days} días</strong> · {x['documento']} · {nombre} · saldo {clp(x['saldo'])}")
-            )
-        elif ve and 0 <= (ve - hoy).days <= 7:
-            alertas.append(
-                ("warn", f"<strong>Por vencer en {(ve-hoy).days} días</strong> · {x['documento']} · {nombre} · {clp(x['saldo'])}")
-            )
-    for cot in db.execute("SELECT * FROM cotizaciones WHERE estado IN ('enviada','borrador')").fetchall():
-        f = dparse(cot["fecha"])
-        if not f:
-            continue
-        vence = f + timedelta(days=int(cot["validez_dias"] or 30))
-        if vence < hoy and cot["estado"] == "enviada":
-            alertas.append(
-                ("warn", f"<strong>Cotización {cot['folio']}</strong> vencida sin respuesta (validez {cot['validez_dias']}d)")
-            )
-    if not alertas:
-        alert_line("ok", "<strong>Sin alertas críticas.</strong> La cartera está al día.")
-    else:
-        for nivel, msg in alertas[:12]:
-            alert_line(nivel, msg)
 
     col_a, col_b = st.columns(2)
     with col_a:
