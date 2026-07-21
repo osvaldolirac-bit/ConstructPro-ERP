@@ -7,7 +7,7 @@
 #
 set -euo pipefail
 
-PORT=8503
+PORT=8505
 BASE_PATH="riomaipo"
 APP_FILE="app_riomaipo.py"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

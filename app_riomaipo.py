@@ -1,7 +1,7 @@
 """
 ERP Master — Carril Río Maipo (Streamlit)
 Misma forma de alojamiento que /laconcepcion y /demo.
-Puerto exclusivo: 8503  |  baseUrlPath: riomaipo
+Puerto exclusivo: 8505  |  baseUrlPath: riomaipo
 """
 
 from __future__ import annotations
@@ -235,7 +235,7 @@ st.markdown(
     <div class="rm-banner">
       <h1>ERP Master · Río Maipo</h1>
       <p>Carril independiente — no es La Concepción ni Demo</p>
-      <span class="rm-chip">erpmaster.cl/riomaipo · puerto 8503</span>
+      <span class="rm-chip">erpmaster.cl/riomaipo · puerto 8505</span>
     </div>
     """,
     unsafe_allow_html=True,

@@ -1,5 +1,5 @@
 [Unit]
-Description=ERP Master - Rio Maipo (Streamlit :8503)
+Description=ERP Master - Rio Maipo (Streamlit :8505)
 After=network.target
 
 [Service]
@@ -10,7 +10,7 @@ WorkingDirectory=/var/www/erpmaster/constructpro-erp
 Environment=STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 ExecStart=/var/www/erpmaster/constructpro-erp/.venv/bin/streamlit run app_riomaipo.py \
   --server.address 127.0.0.1 \
-  --server.port 8503 \
+  --server.port 8505 \
   --server.baseUrlPath riomaipo \
   --server.headless true \
   --browser.gatherUsageStats false

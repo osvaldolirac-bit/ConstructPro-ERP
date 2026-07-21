@@ -19,7 +19,7 @@ Los cambios en GitHub **no** modifican nginx solos: hay que instalar en el servi
 |------|-----|--------|
 | `/laconcepcion/` | Streamlit La Concepción | 85xx (ej. 8501) |
 | `/demo/` | Streamlit Demo | otro 85xx |
-| **`/riomaipo/`** | **Streamlit Río Maipo** | **8503** |
+| **`/riomaipo/`** | **Streamlit Río Maipo** | **8505** |
 
 ## Instalación en el VPS (obligatorio)
 
@@ -34,7 +34,7 @@ sudo bash scripts/install_riomaipo_vps.sh
 Ese script:
 
 1. Crea venv e instala dependencias  
-2. Levanta systemd `riomaipo` en **127.0.0.1:8503** con `baseUrlPath=riomaipo`  
+2. Levanta systemd `riomaipo` en **127.0.0.1:8505** con `baseUrlPath=riomaipo`  
 3. Crea `/etc/nginx/snippets/riomaipo-location.conf`  
 4. Inserta el `include` **antes** del redirect a La Concepción  
 5. Recarga nginx  
@@ -72,7 +72,7 @@ pip install -r requirements.txt
 ./scripts/start_riomaipo.sh
 ```
 
-Abrir: http://127.0.0.1:8503/riomaipo/
+Abrir: http://127.0.0.1:8505/riomaipo/
 
 ## Nota FastAPI
 

@@ -22,14 +22,14 @@ OPCIÓN RÁPIDA (recomendado) — en SSH del VPS:
 OPCIÓN MANUAL (si no usas el script):
 --------------------------------------------------------------------------------
 
-1) Arrancar Río Maipo en puerto 8503 (NO el de La Concepción):
+1) Arrancar Río Maipo en puerto 8505 (NO el de La Concepción):
 
   cd /ruta/del/repo
   python3 -m venv .venv && source .venv/bin/activate
   pip install -r requirements.txt
   streamlit run app_riomaipo.py \
     --server.address 127.0.0.1 \
-    --server.port 8503 \
+    --server.port 8505 \
     --server.baseUrlPath riomaipo \
     --server.headless true
 
@@ -42,7 +42,7 @@ OPCIÓN MANUAL (si no usas el script):
 
   location = /riomaipo { return 301 /riomaipo/; }
   location /riomaipo/ {
-      proxy_pass http://127.0.0.1:8503/riomaipo/;
+      proxy_pass http://127.0.0.1:8505/riomaipo/;
       proxy_http_version 1.1;
       proxy_set_header Host $host;
       proxy_set_header Upgrade $http_upgrade;
@@ -66,7 +66,7 @@ Puertos (no mezclar)
 --------------------------------------------------------------------------------
   /laconcepcion  → Streamlit La Concepción  (ej. 8501)
   /demo          → Streamlit Demo           (ej. 8502)
-  /riomaipo      → Streamlit Río Maipo      (8503)
+  /riomaipo      → Streamlit Río Maipo      (8505)
 
 Si /riomaipo apunta al puerto de La Concepción, verás La Concepción.
 ================================================================================
