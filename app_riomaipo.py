@@ -32,9 +32,12 @@ except ImportError:  # pragma: no cover
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "riomaipo_erp.db"
 LOGO_PATH = BASE_DIR / "static" / "logo_erpmaster.png"
+LOGO_RIOMAIPO_PATH = BASE_DIR / "static" / "logo_riomaipo.png"
 BG_LOGIN_PATH = BASE_DIR / "static" / "bg_login_plano.png"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 (BASE_DIR / "static").mkdir(parents=True, exist_ok=True)
+COT_ITEM_SLOTS = 12
+COT_PDF_ROWS = 24
 
 st.set_page_config(
     page_title="ERP Master · Río Maipo",
@@ -615,6 +618,49 @@ def migrate_usuarios_schema(c: sqlite3.Connection) -> None:
     )
 
 
+def _ensure_columns(c: sqlite3.Connection, table: str, columns: list[tuple[str, str]]) -> None:
+    cols = {r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+    for name, decl in columns:
+        if name not in cols:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+def migrate_cotizaciones_schema(c: sqlite3.Connection) -> None:
+    _ensure_columns(
+        c,
+        "cotizaciones",
+        [
+            ("version", "TEXT DEFAULT '1'"),
+            ("titulo", "TEXT"),
+            ("gg_pct", "REAL DEFAULT 5"),
+            ("utilidad_pct", "REAL DEFAULT 15"),
+            ("gg_monto", "REAL DEFAULT 0"),
+            ("utilidad_monto", "REAL DEFAULT 0"),
+            ("valor_neto", "REAL DEFAULT 0"),
+        ],
+    )
+    _ensure_columns(
+        c,
+        "cotizacion_items",
+        [
+            ("obs", "TEXT"),
+            ("orden", "INTEGER DEFAULT 0"),
+        ],
+    )
+    for clave, nombre, valor, unidad in [
+        ("gg_pct", "Gastos generales", "5", "%"),
+        ("utilidad_pct", "Utilidad", "15", "%"),
+    ]:
+        c.execute(
+            """
+            INSERT INTO parametros (clave, nombre, valor, unidad)
+            VALUES (?,?,?,?)
+            ON CONFLICT(clave) DO NOTHING
+            """,
+            (clave, nombre, valor, unidad),
+        )
+
+
 def ensure_default_user(c: sqlite3.Connection) -> None:
     """Asegura el usuario principal y aplica la clave inicial una sola vez."""
     migrate_usuarios_schema(c)
@@ -1091,10 +1137,11 @@ def fetch_cotizacion(db: sqlite3.Connection, cot_id: int):
 def fetch_cotizacion_items(db: sqlite3.Connection, cot_id: int):
     return db.execute(
         """
-        SELECT descripcion, unidad, cantidad, precio_unitario, total
+        SELECT id, producto_id, descripcion, COALESCE(obs,'') AS obs,
+               unidad, cantidad, precio_unitario, total, COALESCE(orden,0) AS orden
         FROM cotizacion_items
         WHERE cotizacion_id=?
-        ORDER BY id
+        ORDER BY COALESCE(orden,0), id
         """,
         (cot_id,),
     ).fetchall()
@@ -1116,56 +1163,167 @@ def _pdf_txt(value) -> str:
     return str(value or "").encode("latin-1", "replace").decode("latin-1")
 
 
+def fmt_clp_plain(v) -> str:
+    try:
+        return f"{int(round(float(v or 0))):,.0f}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "0"
+
+
+def fmt_cant_pdf(v) -> str:
+    try:
+        return f"{float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (TypeError, ValueError):
+        return "0,00"
+
+
+def calc_cotizacion_totales(subtotal: float, gg_pct: float, utilidad_pct: float, iva_pct: float) -> dict:
+    """Totales estilo planilla Río Maipo: GG/Utilidad sobre subtotal, IVA sobre valor neto."""
+    sub = float(subtotal or 0)
+    gg = int(round(sub * float(gg_pct or 0) / 100.0))
+    util = int(round(sub * float(utilidad_pct or 0) / 100.0))
+    neto = int(round(sub + gg + util))
+    iva = int(round(neto * float(iva_pct or 0)))
+    return {
+        "subtotal": sub,
+        "gg_monto": gg,
+        "utilidad_monto": util,
+        "valor_neto": neto,
+        "iva": iva,
+        "total": neto + iva,
+    }
+
+
+def cotizacion_titulo_pdf(cot) -> str:
+    version = str(cot["version"] if "version" in cot.keys() else "1") or "1"
+    version = version.lstrip("Vv")
+    titulo = ""
+    if "titulo" in cot.keys() and cot["titulo"]:
+        titulo = str(cot["titulo"]).strip()
+    if not titulo:
+        parts = [cot["proyecto"] or "", cot["asunto"] or "", cot["razon_social"] or ""]
+        titulo = " ".join(p for p in parts if p).strip() or "COTIZACION"
+    return f"V{version} COTIZACIÓN {titulo}".upper()
+
+
 def cotizacion_pdf_bytes(cot, items, empresa_row) -> bytes:
+    """PDF horizontal estilo Agrocastilla / Río Maipo Constructora."""
     if FPDF is None:
         raise RuntimeError("FPDF no está instalado en el servidor")
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=False)
     pdf.add_page()
 
-    emp_nombre = (empresa_row["razon_social"] if empresa_row else "Constructora Rio Maipo") or "ERP Master"
-    emp_rut = (empresa_row["rut"] if empresa_row else "") or ""
-    emp_mail = (empresa_row["email"] if empresa_row else "") or ""
-
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 8, _pdf_txt(emp_nombre), ln=1)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 5, _pdf_txt(f"RUT {emp_rut}  |  {emp_mail}"), ln=1)
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 8, _pdf_txt(f"Cotizacion {cot['folio']}"), ln=1)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 5, _pdf_txt(f"Fecha: {cot['fecha'] or '-'}  |  Estado: {cot['estado']}"), ln=1)
-    pdf.cell(0, 5, _pdf_txt(f"Cliente: {cot['razon_social'] or '-'}  |  RUT {cot['cliente_rut'] or '-'}"), ln=1)
-    pdf.cell(0, 5, _pdf_txt(f"Proyecto: {cot['proyecto'] or '-'}  |  Asunto: {cot['asunto'] or '-'}"), ln=1)
-    pdf.cell(0, 5, _pdf_txt(f"Validez: {cot['validez_dias'] or 30} dias"), ln=1)
-    pdf.ln(4)
-
-    pdf.set_font("Helvetica", "B", 9)
-    for label, width in [("Descripcion", 80), ("Un", 15), ("Cant", 20), ("P.Unit", 35), ("Total", 35)]:
-        pdf.cell(width, 7, label, border=1)
-    pdf.ln()
-    pdf.set_font("Helvetica", "", 9)
-    for it in items:
-        desc = _pdf_txt(it["descripcion"])[:48]
-        pdf.cell(80, 6, desc, border=1)
-        pdf.cell(15, 6, _pdf_txt(it["unidad"]), border=1)
-        pdf.cell(20, 6, f"{float(it['cantidad'] or 0):.2f}", border=1)
-        pdf.cell(35, 6, _pdf_txt(clp(it["precio_unitario"])), border=1)
-        pdf.cell(35, 6, _pdf_txt(clp(it["total"])), border=1)
-        pdf.ln()
-
-    pdf.ln(3)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, _pdf_txt(f"Subtotal: {clp(cot['subtotal'])}"), ln=1)
-    pdf.cell(0, 6, _pdf_txt(f"IVA: {clp(cot['iva'])}"), ln=1)
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 7, _pdf_txt(f"Total: {clp(cot['total'])}"), ln=1)
-    if cot["notas"]:
-        pdf.ln(3)
+    # Logo centrado (compacto para dejar espacio a la grilla)
+    logo = LOGO_RIOMAIPO_PATH if LOGO_RIOMAIPO_PATH.exists() else LOGO_PATH
+    if logo.exists():
+        pdf.image(str(logo), x=128, y=4, w=40)
+    else:
+        pdf.set_text_color(180, 30, 30)
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_xy(0, 10)
+        pdf.cell(297, 6, _pdf_txt("RIO MAIPO"), align="C", ln=1)
         pdf.set_font("Helvetica", "", 9)
-        pdf.multi_cell(0, 5, _pdf_txt(f"Notas: {cot['notas']}"))
+        pdf.cell(297, 5, _pdf_txt("Constructora"), align="C", ln=1)
+        pdf.set_text_color(0, 0, 0)
+
+    # Barra título
+    title = _pdf_txt(cotizacion_titulo_pdf(cot))
+    pdf.set_xy(18, 28)
+    pdf.set_fill_color(210, 210, 210)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(261, 6, title, border=1, align="C", fill=True)
+
+    # Tabla
+    headers = ["ITEM", "ESPECIFICACIÓN", "OBS", "UND", "CANTIDAD", "VALOR", "TOTAL"]
+    widths = [14, 74, 58, 16, 24, 37, 38]
+    x0, y0 = 18, 36
+    row_h = 4.0
+    pdf.set_xy(x0, y0)
+    pdf.set_fill_color(220, 220, 220)
+    pdf.set_font("Helvetica", "B", 8)
+    for h, w in zip(headers, widths):
+        pdf.cell(w, row_h, h, border=1, align="C", fill=True)
+    pdf.ln(row_h)
+
+    subtotal = float(cot["subtotal"] or 0)
+    if not subtotal and items:
+        subtotal = sum(float(it["total"] or 0) for it in items)
+
+    # Fila sección 1.0
+    pdf.set_x(x0)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.cell(widths[0], row_h, "1.0", border=1, align="C")
+    for w in widths[1:-1]:
+        pdf.cell(w, row_h, "", border=1)
+    pdf.cell(widths[-1], row_h, _pdf_txt(f"$ {fmt_clp_plain(subtotal)}"), border=1, align="R")
+    pdf.ln(row_h)
+
+    # Ítems 1.1 .. N + vacíos hasta COT_PDF_ROWS
+    filled = list(items)[:COT_PDF_ROWS]
+    while len(filled) < COT_PDF_ROWS:
+        filled.append(None)
+
+    pdf.set_font("Helvetica", "", 8)
+    for idx, it in enumerate(filled, start=1):
+        pdf.set_x(x0)
+        code = f"1.{idx}"
+        if it is None:
+            pdf.cell(widths[0], row_h, code, border=1, align="C")
+            for w in widths[1:-1]:
+                pdf.cell(w, row_h, "", border=1)
+            pdf.cell(widths[-1], row_h, "$ -", border=1, align="R")
+        else:
+            desc = _pdf_txt(it["descripcion"])[:46]
+            obs = _pdf_txt(it["obs"] if "obs" in it.keys() else "")[:34]
+            und = _pdf_txt(it["unidad"] or "")
+            cant = fmt_cant_pdf(it["cantidad"])
+            valor = _pdf_txt(f"$ {fmt_clp_plain(it['precio_unitario'])}")
+            total = _pdf_txt(f"$ {fmt_clp_plain(it['total'])}")
+            pdf.cell(widths[0], row_h, code, border=1, align="C")
+            pdf.cell(widths[1], row_h, desc, border=1)
+            pdf.cell(widths[2], row_h, obs, border=1)
+            pdf.cell(widths[3], row_h, und, border=1, align="C")
+            pdf.cell(widths[4], row_h, cant, border=1, align="R")
+            pdf.cell(widths[5], row_h, valor, border=1, align="R")
+            pdf.cell(widths[6], row_h, total, border=1, align="R")
+        pdf.ln(row_h)
+
+    # Resumen inferior derecho
+    gg_pct = float(cot["gg_pct"] if "gg_pct" in cot.keys() and cot["gg_pct"] is not None else 5)
+    util_pct = float(
+        cot["utilidad_pct"] if "utilidad_pct" in cot.keys() and cot["utilidad_pct"] is not None else 15
+    )
+    gg = float(cot["gg_monto"] if "gg_monto" in cot.keys() and cot["gg_monto"] is not None else round(subtotal * gg_pct / 100))
+    util = float(
+        cot["utilidad_monto"]
+        if "utilidad_monto" in cot.keys() and cot["utilidad_monto"] is not None
+        else round(subtotal * util_pct / 100)
+    )
+    neto = float(
+        cot["valor_neto"] if "valor_neto" in cot.keys() and cot["valor_neto"] is not None else subtotal + gg + util
+    )
+    iva = float(cot["iva"] or 0)
+    total = float(cot["total"] or 0)
+
+    summary = [
+        ("SUB TOTAL", f"$ {fmt_clp_plain(subtotal)}", False),
+        (f"GG {gg_pct:g}%", f"$ {fmt_clp_plain(gg)}", False),
+        (f"UTILIDAD {util_pct:g}%", f"$ {fmt_clp_plain(util)}", False),
+        ("VALOR NETO", f"$ {fmt_clp_plain(neto)}", True),
+        ("IVA", f"$ {fmt_clp_plain(iva)}", False),
+        ("TOTAL", f"$ {fmt_clp_plain(total)}", True),
+    ]
+    label_w, val_w = 40, 38
+    sx = x0 + sum(widths) - label_w - val_w
+    sy = pdf.get_y() + 2
+    for i, (lab, val, bold) in enumerate(summary):
+        pdf.set_xy(sx, sy + i * row_h)
+        pdf.set_font("Helvetica", "B" if bold else "", 8)
+        border = 1
+        pdf.cell(label_w, row_h, _pdf_txt(lab), border=border)
+        pdf.cell(val_w, row_h, _pdf_txt(val), border=border, align="R")
 
     raw = pdf.output(dest="S")
     if isinstance(raw, str):
@@ -1242,6 +1400,10 @@ def init_db() -> None:
             folio TEXT UNIQUE, cliente_id INTEGER,
             asunto TEXT, proyecto TEXT, estado TEXT DEFAULT 'borrador',
             fecha TEXT, validez_dias INTEGER DEFAULT 30,
+            version TEXT DEFAULT '1', titulo TEXT,
+            gg_pct REAL DEFAULT 5, utilidad_pct REAL DEFAULT 15,
+            gg_monto REAL DEFAULT 0, utilidad_monto REAL DEFAULT 0,
+            valor_neto REAL DEFAULT 0,
             subtotal REAL DEFAULT 0, iva REAL DEFAULT 0, total REAL DEFAULT 0,
             notas TEXT, cxc_id INTEGER,
             FOREIGN KEY(cliente_id) REFERENCES clientes(id)
@@ -1250,6 +1412,7 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cotizacion_id INTEGER NOT NULL,
             producto_id INTEGER, descripcion TEXT NOT NULL,
+            obs TEXT, orden INTEGER DEFAULT 0,
             unidad TEXT DEFAULT 'un', cantidad REAL DEFAULT 1,
             precio_unitario REAL DEFAULT 0, total REAL DEFAULT 0,
             FOREIGN KEY(cotizacion_id) REFERENCES cotizaciones(id) ON DELETE CASCADE
@@ -1295,6 +1458,8 @@ def init_db() -> None:
             [
                 ("iva", "IVA", "19", "%"),
                 ("validez_cotizacion", "Validez cotización", "30", "días"),
+                ("gg_pct", "Gastos generales", "5", "%"),
+                ("utilidad_pct", "Utilidad", "15", "%"),
                 ("dias_credito", "Días crédito CxC", "30", "días"),
                 ("alerta_mora", "Alerta mora desde", "1", "días"),
             ],
@@ -1389,6 +1554,7 @@ def init_db() -> None:
             """,
             (em2.isoformat(), ve2.isoformat()),
         )
+    migrate_cotizaciones_schema(c)
     ensure_default_user(c)
     c.commit()
     c.close()
@@ -1929,6 +2095,8 @@ elif modulo == "Cotizaciones":
     ).fetchall()
     iva_pct = param(db, "iva", 19) / 100
     validez_def = int(param(db, "validez_cotizacion", 30))
+    gg_pct_def = param(db, "gg_pct", 5)
+    utilidad_pct_def = param(db, "utilidad_pct", 15)
 
     # ----- PDF download banner -----
     if st.session_state.cot_pdf_id:
@@ -2202,16 +2370,27 @@ elif modulo == "Cotizaciones":
                 """,
                 unsafe_allow_html=True,
             )
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Subtotal", clp(cot["subtotal"]))
-            c2.metric("IVA", clp(cot["iva"]))
-            c3.metric("Total", clp(cot["total"]))
+            gg_p = float(cot["gg_pct"] if cot["gg_pct"] is not None else gg_pct_def)
+            util_p = float(cot["utilidad_pct"] if cot["utilidad_pct"] is not None else utilidad_pct_def)
+            m1, m2, m3, m4, m5, m6 = st.columns(6)
+            m1.metric("Subtotal", clp(cot["subtotal"]))
+            m2.metric(f"GG {gg_p:g}%", clp(cot["gg_monto"]))
+            m3.metric(f"Utilidad {util_p:g}%", clp(cot["utilidad_monto"]))
+            m4.metric("Valor neto", clp(cot["valor_neto"] or 0))
+            m5.metric("IVA", clp(cot["iva"]))
+            m6.metric("Total", clp(cot["total"]))
             st.dataframe(
                 pd.read_sql_query(
                     """
-                    SELECT descripcion AS Descripción, unidad AS Un,
-                           cantidad AS Cant, precio_unitario AS P_Unit, total AS Total
-                    FROM cotizacion_items WHERE cotizacion_id=? ORDER BY id
+                    SELECT descripcion AS Especificación,
+                           COALESCE(obs,'') AS Obs,
+                           unidad AS Und,
+                           cantidad AS Cantidad,
+                           precio_unitario AS Valor,
+                           total AS Total
+                    FROM cotizacion_items
+                    WHERE cotizacion_id=?
+                    ORDER BY COALESCE(orden,0), id
                     """,
                     db,
                     params=(cot["id"],),
@@ -2315,71 +2494,134 @@ elif modulo == "Cotizaciones":
             if edit_cot and edit_cot["cliente_id"] in cli_ids:
                 cli_default = cli_ids.index(edit_cot["cliente_id"])
             with st.form("f_cot"):
-                cliente_id = st.selectbox(
-                    "Cliente",
-                    options=cli_ids,
-                    index=cli_default,
-                    format_func=lambda i: next(x["razon_social"] for x in clientes if x["id"] == i),
-                )
-                asunto = st.text_input(
-                    "Asunto / nombre interno",
-                    value=(edit_cot["asunto"] or "") if edit_cot else "",
-                )
-                proyecto = st.text_input(
-                    "Proyecto / obra",
-                    value=(edit_cot["proyecto"] or "Condominio Río Maipo") if edit_cot else "Condominio Río Maipo",
-                )
-                validez = st.number_input(
-                    "Validez (días)",
-                    min_value=1,
-                    value=int(edit_cot["validez_dias"] or validez_def) if edit_cot else validez_def,
-                )
-                estados = ["borrador", "enviada", "aprobada", "rechazada"]
-                est_val = edit_cot["estado"] if edit_cot and edit_cot["estado"] in estados else "borrador"
-                estado = st.selectbox("Estado", estados, index=estados.index(est_val))
-                st.markdown("**Ítems** (elige producto o escribe descripción)")
+                st.caption("Formato Río Maipo: ítems + OBS + GG + Utilidad + IVA (como cotización Agrocastilla).")
+                h1, h2, h3 = st.columns([0.7, 2.2, 1.4])
+                with h1:
+                    version = st.text_input(
+                        "Versión",
+                        value=(edit_cot["version"] or "1") if edit_cot else "1",
+                        help="Aparece como V1, V2… en el PDF",
+                    )
+                with h2:
+                    titulo = st.text_input(
+                        "Título cotización (barra PDF)",
+                        value=(edit_cot["titulo"] or "") if edit_cot else "",
+                        placeholder="AGROCASTILLA BODEGA ENOLOGIA SOMBREADERO",
+                    )
+                with h3:
+                    cliente_id = st.selectbox(
+                        "Cliente",
+                        options=cli_ids,
+                        index=cli_default,
+                        format_func=lambda i: next(x["razon_social"] for x in clientes if x["id"] == i),
+                    )
+                p1, p2, p3, p4 = st.columns(4)
+                with p1:
+                    proyecto = st.text_input(
+                        "Proyecto / obra",
+                        value=(edit_cot["proyecto"] or "") if edit_cot else "",
+                        placeholder="Pirque · Sombreador",
+                    )
+                with p2:
+                    asunto = st.text_input(
+                        "Asunto / nombre interno",
+                        value=(edit_cot["asunto"] or "") if edit_cot else "",
+                    )
+                with p3:
+                    validez = st.number_input(
+                        "Validez (días)",
+                        min_value=1,
+                        value=int(edit_cot["validez_dias"] or validez_def) if edit_cot else validez_def,
+                    )
+                with p4:
+                    estados = ["borrador", "enviada", "aprobada", "rechazada"]
+                    est_val = edit_cot["estado"] if edit_cot and edit_cot["estado"] in estados else "borrador"
+                    estado = st.selectbox("Estado", estados, index=estados.index(est_val))
+
+                g1, g2 = st.columns(2)
+                with g1:
+                    gg_pct = st.number_input(
+                        "GG %",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=float(edit_cot["gg_pct"] if edit_cot and edit_cot["gg_pct"] is not None else gg_pct_def),
+                        step=0.5,
+                    )
+                with g2:
+                    utilidad_pct = st.number_input(
+                        "Utilidad %",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=float(
+                            edit_cot["utilidad_pct"]
+                            if edit_cot and edit_cot["utilidad_pct"] is not None
+                            else utilidad_pct_def
+                        ),
+                        step=0.5,
+                    )
+
+                st.markdown("**Ítems** · Especificación · Obs · Und · Cantidad · Valor unitario")
+                head = st.columns([0.45, 2.1, 1.4, 0.7, 0.8, 1.0])
+                for col, label in zip(head, ["Item", "Especificación", "Obs", "Und", "Cant", "Valor"]):
+                    col.caption(label)
+
                 items = []
-                for i in range(4):
+                for i in range(COT_ITEM_SLOTS):
                     base = edit_items[i] if i < len(edit_items) else None
-                    cols = st.columns([2.2, 2.2, 0.7, 0.8, 1])
+                    cols = st.columns([0.45, 2.1, 1.4, 0.7, 0.8, 1.0])
                     with cols[0]:
-                        prod_opt = st.selectbox(
-                            f"Producto {i+1}",
-                            options=[0] + [p["id"] for p in productos],
-                            format_func=lambda x: "— manual —" if x == 0 else next(
-                                f"{p['codigo']} · {p['nombre']}" for p in productos if p["id"] == x
-                            ),
-                            key=f"prod_{mode}_{i}",
+                        st.text_input(
+                            "item",
+                            value=f"1.{i+1}",
+                            disabled=True,
+                            label_visibility="collapsed",
+                            key=f"itemcode_{mode}_{i}",
                         )
                     with cols[1]:
                         desc = st.text_input(
-                            "Descripción",
+                            "Especificación",
                             key=f"desc_{mode}_{i}",
                             value=(base["descripcion"] if base else ""),
+                            label_visibility="collapsed",
+                            placeholder="excavaciones",
                         )
                     with cols[2]:
-                        un = st.text_input(
-                            "Un",
-                            value=(base["unidad"] if base else "m2"),
-                            key=f"un_{mode}_{i}",
+                        obs = st.text_input(
+                            "Obs",
+                            key=f"obs_{mode}_{i}",
+                            value=(base["obs"] if base else ""),
+                            label_visibility="collapsed",
+                            placeholder="100x100x180",
                         )
                     with cols[3]:
+                        un = st.text_input(
+                            "Und",
+                            value=(base["unidad"] if base else "un"),
+                            key=f"un_{mode}_{i}",
+                            label_visibility="collapsed",
+                        )
+                    with cols[4]:
                         cant = st.number_input(
                             "Cant",
                             min_value=0.0,
                             value=float(base["cantidad"]) if base else 0.0,
                             key=f"cant_{mode}_{i}",
+                            label_visibility="collapsed",
+                            step=1.0,
                         )
-                    with cols[4]:
+                    with cols[5]:
                         pu = st.number_input(
-                            "P.Unit",
+                            "Valor",
                             min_value=0.0,
                             value=float(base["precio_unitario"]) if base else 0.0,
                             key=f"pu_{mode}_{i}",
+                            label_visibility="collapsed",
+                            step=1000.0,
                         )
-                    items.append((prod_opt, desc, un, cant, pu))
+                    items.append((desc, obs, un, cant, pu))
+
                 notas = st.text_area(
-                    "Notas",
+                    "Notas internas",
                     value=(edit_cot["notas"] or "") if edit_cot else "",
                 )
                 guardar = st.form_submit_button(
@@ -2389,35 +2631,40 @@ elif modulo == "Cotizaciones":
 
             if guardar:
                 lineas = []
-                for prod_opt, desc, un, cant, pu in items:
-                    if cant <= 0:
+                for orden, (desc, obs, un, cant, pu) in enumerate(items, start=1):
+                    if float(cant or 0) <= 0 or not str(desc or "").strip():
                         continue
-                    pid = prod_opt if prod_opt else None
-                    if pid:
-                        p = next(x for x in productos if x["id"] == pid)
-                        descripcion = desc.strip() or p["nombre"]
-                        unidad = un.strip() or p["unidad"]
-                        precio = float(pu) if pu > 0 else float(p["precio"])
-                    else:
-                        if not desc.strip():
-                            continue
-                        descripcion = desc.strip()
-                        unidad = un.strip() or "un"
-                        precio = float(pu)
-                    total = float(cant) * precio
-                    lineas.append((pid, descripcion, unidad, float(cant), precio, total))
+                    descripcion = str(desc).strip()
+                    unidad = str(un or "un").strip() or "un"
+                    precio = float(pu or 0)
+                    total_ln = float(cant) * precio
+                    lineas.append(
+                        (
+                            None,
+                            descripcion,
+                            str(obs or "").strip() or None,
+                            orden,
+                            unidad,
+                            float(cant),
+                            precio,
+                            total_ln,
+                        )
+                    )
                 if not lineas:
-                    st.error("Agrega al menos un ítem con cantidad > 0")
+                    st.error("Agrega al menos un ítem con especificación y cantidad > 0")
                 else:
-                    subtotal = sum(x[5] for x in lineas)
-                    iva = round(subtotal * iva_pct)
-                    total = subtotal + iva
+                    subtotal = sum(x[7] for x in lineas)
+                    tots = calc_cotizacion_totales(subtotal, gg_pct, utilidad_pct, iva_pct)
                     cur = db.cursor()
+                    ver = (version or "1").strip().lstrip("Vv") or "1"
+                    tit = (titulo or "").strip() or None
                     if mode == "edit" and edit_cot:
                         cur.execute(
                             """
                             UPDATE cotizaciones
                             SET cliente_id=?, asunto=?, proyecto=?, estado=?, validez_dias=?,
+                                version=?, titulo=?, gg_pct=?, utilidad_pct=?,
+                                gg_monto=?, utilidad_monto=?, valor_neto=?,
                                 subtotal=?, iva=?, total=?, notas=?
                             WHERE id=?
                             """,
@@ -2427,9 +2674,16 @@ elif modulo == "Cotizaciones":
                                 proyecto.strip() or None,
                                 estado,
                                 int(validez),
-                                subtotal,
-                                iva,
-                                total,
+                                ver,
+                                tit,
+                                float(gg_pct),
+                                float(utilidad_pct),
+                                tots["gg_monto"],
+                                tots["utilidad_monto"],
+                                tots["valor_neto"],
+                                tots["subtotal"],
+                                tots["iva"],
+                                tots["total"],
                                 notas.strip() or None,
                                 edit_cot["id"],
                             ),
@@ -2443,8 +2697,10 @@ elif modulo == "Cotizaciones":
                             """
                             INSERT INTO cotizaciones
                             (folio, cliente_id, asunto, proyecto, estado, fecha, validez_dias,
+                             version, titulo, gg_pct, utilidad_pct,
+                             gg_monto, utilidad_monto, valor_neto,
                              subtotal, iva, total, notas)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                             """,
                             (
                                 folio,
@@ -2454,9 +2710,16 @@ elif modulo == "Cotizaciones":
                                 estado,
                                 date.today().isoformat(),
                                 int(validez),
-                                subtotal,
-                                iva,
-                                total,
+                                ver,
+                                tit,
+                                float(gg_pct),
+                                float(utilidad_pct),
+                                tots["gg_monto"],
+                                tots["utilidad_monto"],
+                                tots["valor_neto"],
+                                tots["subtotal"],
+                                tots["iva"],
+                                tots["total"],
                                 notas.strip() or None,
                             ),
                         )
@@ -2464,13 +2727,13 @@ elif modulo == "Cotizaciones":
                     cur.executemany(
                         """
                         INSERT INTO cotizacion_items
-                        (cotizacion_id, producto_id, descripcion, unidad, cantidad, precio_unitario, total)
-                        VALUES (?,?,?,?,?,?,?)
+                        (cotizacion_id, producto_id, descripcion, obs, orden, unidad, cantidad, precio_unitario, total)
+                        VALUES (?,?,?,?,?,?,?,?,?)
                         """,
                         [(cot_id, *ln) for ln in lineas],
                     )
                     db.commit()
-                    st.success(f"{folio} guardada · total {clp(total)}")
+                    st.success(f"{folio} guardada · total {clp(tots['total'])}")
                     st.session_state.cot_mode = "view"
                     st.session_state.cot_focus_id = cot_id
                     st.rerun()
