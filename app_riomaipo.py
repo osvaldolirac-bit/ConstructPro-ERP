@@ -370,50 +370,90 @@ def inject_styles() -> None:
   iframe { border-radius: 10px; }
   [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: var(--muted) !important; }
 
-  .cot-list {
+  .cot-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .65rem;
+    margin: 0 0 1rem;
+  }
+  @media (max-width: 1100px) {
+    .cot-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .cot-kpi-grid { grid-template-columns: 1fr; }
+  }
+  .cot-kpi {
+    border-radius: 12px;
+    padding: .85rem .95rem;
+    color: #fff;
+    box-shadow: 0 8px 22px rgba(22,58,95,.12);
+    min-height: 92px;
+  }
+  .cot-kpi .label { font-size: .78rem; font-weight: 700; opacity: .95; }
+  .cot-kpi .value { font-size: 1.15rem; font-weight: 800; margin-top: .35rem; line-height: 1.2; }
+  .cot-kpi .hint { font-size: .78rem; margin-top: .25rem; opacity: .9; }
+  .cot-kpi.ing { background: linear-gradient(135deg, #1f4b99, #2f6fed); }
+  .cot-kpi.apr { background: linear-gradient(135deg, #0f8fa8, #22b8cf); }
+  .cot-kpi.rec { background: linear-gradient(135deg, #c23a6b, #e85d8a); }
+  .cot-kpi.an { background: linear-gradient(135deg, #1f8a65, #2fbf71); }
+  .cot-kpi.mes { background: linear-gradient(135deg, #c46a12, #f0a202); }
+
+  .cot-filters {
+    background: #fff;
     border: 1px solid var(--line);
     border-radius: 12px;
-    overflow: hidden;
-    background: #fff;
+    padding: .85rem .9rem .55rem;
+    margin-bottom: .85rem;
     box-shadow: var(--shadow);
-    margin-bottom: .9rem;
   }
-  .cot-row-head, .cot-row {
+  .cot-table {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+  .cot-table-head, .cot-table-row {
     display: grid;
-    grid-template-columns: 16px 1fr 1.3fr 1.1fr .85fr .85fr .95fr;
+    grid-template-columns: 40px 1fr .9fr 2fr 1fr .9fr 170px;
     gap: .4rem;
     align-items: center;
-    padding: .5rem .7rem;
+    padding: .55rem .75rem;
   }
-  .cot-row-head {
+  .cot-table-head {
+    background: #f3f6fb;
+    border-bottom: 1px solid var(--line);
     font-size: .7rem;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: .04em;
     color: var(--muted);
-    background: var(--panel-soft);
-    border-bottom: 1px solid var(--line);
   }
-  .cot-row {
-    border-bottom: 1px solid var(--line);
-    background: #fff;
+  .cot-table-row {
+    border-bottom: 1px solid #e8eef5;
+    font-size: .86rem;
   }
-  .cot-row:last-child { border-bottom: 0; }
-  .cot-cell {
-    font-size: .86rem; color: var(--text);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  .cot-table-row:nth-child(even) { background: #fafcff; }
+  .cot-table-row:last-child { border-bottom: 0; }
+  .cot-num { color: #2f6fed; font-weight: 800; }
+  .cot-cli strong { display:block; color: var(--text); }
+  .cot-cli span { display:block; color: var(--muted); font-size: .78rem; margin-top: .1rem; }
+  .cot-estado {
+    display:inline-flex; align-items:center; gap:.35rem;
+    font-weight: 700; font-size: .8rem; text-transform: capitalize;
   }
+  .cot-estado.aprobada { color: #1f8a65; }
+  .cot-estado.rechazada { color: #b42318; }
+  .cot-estado.enviada, .cot-estado.borrador { color: #1a2b3c; }
   .cot-dot {
     width: 10px; height: 10px; border-radius: 50%;
     display: inline-block; background: #2b2f36;
   }
   .cot-dot.ok { background: #1f8a65; }
   .cot-dot.warn { background: #d59a1b; }
-  .cot-dot.muted { background: #8a97a5; }
-  .cot-actions-label {
-    font-size: .7rem; font-weight: 800; text-transform: uppercase;
-    letter-spacing: .04em; color: var(--muted); margin: 0 0 .25rem;
-  }
+  .cot-dot.muted { background: #2b2f36; }
+  .cot-dot.danger { background: #b42318; }
 
   .rm-footer-mark {
     margin: 2.4rem 0 .4rem;
@@ -1007,7 +1047,19 @@ def estado_dot_class(estado: str) -> str:
         return "ok"
     if estado == "enviada":
         return "warn"
+    if estado == "rechazada":
+        return "danger"
     return "muted"
+
+
+def estado_label_soluerp(estado: str) -> str:
+    mapping = {
+        "borrador": "Ingresada",
+        "enviada": "Ingresada",
+        "aprobada": "Aprobada",
+        "rechazada": "Rechazada",
+    }
+    return mapping.get(estado or "", estado or "—")
 
 
 def fetch_cotizacion(db: sqlite3.Connection, cot_id: int):
@@ -1740,7 +1792,7 @@ elif modulo == "Productos":
 # COTIZACIONES
 # ===========================================================================
 elif modulo == "Cotizaciones":
-    page_header("Cotizaciones", "Crear, visualizar, exportar PDF, modificar o eliminar cotizaciones.")
+    page_header("Cotizaciones", "Gestión comercial con indicadores, filtros y acciones rápidas.")
 
     if "cot_mode" not in st.session_state:
         st.session_state.cot_mode = "list"
@@ -1817,85 +1869,195 @@ elif modulo == "Cotizaciones":
     # LISTADO + CREAR + ACCIONES
     # =====================================================================
     if mode == "list":
-        top_a, top_b = st.columns([4, 1])
-        with top_a:
-            f_estado = st.multiselect(
-                "Filtrar estado",
-                ["borrador", "enviada", "aprobada", "rechazada"],
-                default=[],
+        # ----- KPIs tipo SOLUERP -----
+        all_rows = db.execute(
+            """
+            SELECT id, folio, fecha, estado, total, cliente_id, asunto, proyecto
+            FROM cotizaciones
+            """
+        ).fetchall()
+        hoy = date.today()
+        n_total = len(all_rows)
+        sum_total = sum(float(r["total"] or 0) for r in all_rows)
+        aprobadas = [r for r in all_rows if r["estado"] == "aprobada"]
+        rechazadas = [r for r in all_rows if r["estado"] == "rechazada"]
+        n_apr = len(aprobadas)
+        n_rec = len(rechazadas)
+        sum_apr = sum(float(r["total"] or 0) for r in aprobadas)
+        sum_rec = sum(float(r["total"] or 0) for r in rechazadas)
+        conv_anual = (n_apr / n_total * 100) if n_total else 0.0
+
+        mes_rows = []
+        for r in all_rows:
+            f = dparse(r["fecha"])
+            if f and f.year == hoy.year and f.month == hoy.month:
+                mes_rows.append(r)
+        n_mes = len(mes_rows)
+        n_mes_apr = sum(1 for r in mes_rows if r["estado"] == "aprobada")
+        conv_mes = (n_mes_apr / n_mes * 100) if n_mes else 0.0
+
+        st.markdown(
+            f"""
+            <div class="cot-kpi-grid">
+              <div class="cot-kpi ing">
+                <div class="label">Ingresadas</div>
+                <div class="value">{n_total} Cotizaciones</div>
+                <div class="hint">{clp(sum_total)}</div>
+              </div>
+              <div class="cot-kpi apr">
+                <div class="label">Aprobadas</div>
+                <div class="value">{n_apr} Cotizaciones</div>
+                <div class="hint">{clp(sum_apr)}</div>
+              </div>
+              <div class="cot-kpi rec">
+                <div class="label">Rechazadas</div>
+                <div class="value">{n_rec} Cotizaciones</div>
+                <div class="hint">{clp(sum_rec)}</div>
+              </div>
+              <div class="cot-kpi an">
+                <div class="label">Conversión anual</div>
+                <div class="value">{conv_anual:.1f} %</div>
+                <div class="hint">{n_apr} de {n_total}</div>
+              </div>
+              <div class="cot-kpi mes">
+                <div class="label">Conversión mes actual</div>
+                <div class="value">{conv_mes:.0f} %</div>
+                <div class="hint">{n_mes_apr} de {n_mes}</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # ----- Filtros -----
+        st.markdown('<div class="cot-filters">', unsafe_allow_html=True)
+        f1, f2, f3, f4, f5, f6 = st.columns([1.1, 1.1, 1.6, 1.1, 0.9, 1])
+        with f1:
+            desde = st.date_input("Desde", value=date(2020, 1, 1), format="DD/MM/YYYY", key="cot_desde")
+        with f2:
+            hasta = st.date_input("Hasta", value=date.today(), format="DD/MM/YYYY", key="cot_hasta")
+        with f3:
+            q = st.text_input("Número, cliente", placeholder="COT-1000 o cliente…", key="cot_q")
+        with f4:
+            est_filtro = st.selectbox(
+                "Estado",
+                ["Todos", "Ingresada", "Aprobada", "Rechazada"],
+                key="cot_est_filtro",
             )
-        with top_b:
+        with f5:
             st.write("")
             st.write("")
-            if st.button("+ Crear", type="primary", use_container_width=True, key="cot_crear"):
+            st.button("Buscar", use_container_width=True, key="cot_buscar")
+        with f6:
+            st.write("")
+            st.write("")
+            if st.button("+ Nueva", type="primary", use_container_width=True, key="cot_crear"):
                 st.session_state.cot_mode = "new"
                 st.session_state.cot_focus_id = None
                 st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
         sql = """
             SELECT c.id, c.folio, c.fecha, cl.razon_social AS cliente,
                    c.asunto, c.proyecto, c.estado, c.total
             FROM cotizaciones c
             LEFT JOIN clientes cl ON cl.id = c.cliente_id
+            WHERE 1=1
         """
-        if f_estado:
-            sql += " WHERE c.estado IN (" + ",".join("?" * len(f_estado)) + ")"
-            rows = db.execute(sql + " ORDER BY c.id DESC", f_estado).fetchall()
-        else:
-            rows = db.execute(sql + " ORDER BY c.id DESC").fetchall()
+        params: list = []
+        if isinstance(desde, date):
+            sql += " AND (c.fecha IS NULL OR c.fecha >= ?)"
+            params.append(desde.isoformat())
+        if isinstance(hasta, date):
+            sql += " AND (c.fecha IS NULL OR c.fecha <= ?)"
+            params.append(hasta.isoformat())
+        if q and q.strip():
+            like = f"%{q.strip()}%"
+            sql += " AND (c.folio LIKE ? OR cl.razon_social LIKE ? OR c.asunto LIKE ? OR c.proyecto LIKE ?)"
+            params.extend([like, like, like, like])
+        if est_filtro == "Aprobada":
+            sql += " AND c.estado = 'aprobada'"
+        elif est_filtro == "Rechazada":
+            sql += " AND c.estado = 'rechazada'"
+        elif est_filtro == "Ingresada":
+            sql += " AND c.estado IN ('borrador','enviada')"
+        rows = db.execute(sql + " ORDER BY c.id DESC", params).fetchall()
+
+        st.caption(f"Mostrando {len(rows)} cotizaciones")
 
         if not rows:
-            empty_state("Sin cotizaciones todavía. Usa Crear para emitir la primera.")
+            empty_state("No hay cotizaciones para estos filtros. Prueba + Nueva.")
         else:
-            st.markdown('<div class="cot-list">', unsafe_allow_html=True)
-            st.markdown(
-                """
-                <div class="cot-row-head">
-                  <div></div>
-                  <div>Folio</div><div>Cliente</div><div>Proyecto</div>
-                  <div>Fecha</div><div>Estado</div><div>Total</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            for r in rows:
-                cid = int(r["id"])
-                dot = estado_dot_class(r["estado"] or "")
-                st.markdown(
-                    f"""
-                    <div class="cot-row">
-                      <div><span class="cot-dot {dot}"></span></div>
-                      <div class="cot-cell"><strong>{r['folio']}</strong></div>
-                      <div class="cot-cell">{r['cliente'] or '—'}</div>
-                      <div class="cot-cell">{r['proyecto'] or r['asunto'] or '—'}</div>
-                      <div class="cot-cell">{r['fecha'] or '—'}</div>
-                      <div class="cot-cell">{r['estado']}</div>
-                      <div class="cot-cell">{clp(r['total'])}</div>
-                    </div>
-                    """,
+            head = st.columns([0.35, 0.9, 0.85, 2.0, 0.95, 0.9, 1.9])
+            headers = ["#", "Número", "Fecha", "Cliente", "Monto", "Estado", "Acciones"]
+            for col, title in zip(head, headers):
+                col.markdown(
+                    f"<div style='font-size:.7rem;font-weight:800;text-transform:uppercase;"
+                    f"letter-spacing:.04em;color:#5b6b7c;padding:.2rem 0;'>{title}</div>",
                     unsafe_allow_html=True,
                 )
-                st.markdown('<div class="cot-actions-label">Acciones</div>', unsafe_allow_html=True)
-                a1, a2, a3, a4, _sp = st.columns([1, 1, 1, 1, 4])
-                with a1:
-                    if st.button("Ver", key=f"cot_ver_{cid}", use_container_width=True, help="Visualizar"):
-                        st.session_state.cot_mode = "view"
-                        st.session_state.cot_focus_id = cid
-                        st.rerun()
-                with a2:
-                    if st.button("PDF", key=f"cot_pdf_{cid}", use_container_width=True, help="Descargar PDF"):
-                        st.session_state.cot_pdf_id = cid
-                        st.rerun()
-                with a3:
-                    if st.button("Editar", key=f"cot_edit_{cid}", use_container_width=True, help="Modificar"):
-                        st.session_state.cot_mode = "edit"
-                        st.session_state.cot_focus_id = cid
-                        st.rerun()
-                with a4:
-                    if st.button("Borrar", key=f"cot_del_{cid}", use_container_width=True, help="Eliminar"):
-                        st.session_state.cot_delete_id = cid
-                        st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
+            for idx, r in enumerate(rows, start=1):
+                cid = int(r["id"])
+                est = r["estado"] or ""
+                dot = estado_dot_class(est)
+                label = estado_label_soluerp(est)
+                desc = (r["asunto"] or r["proyecto"] or "").strip()
+                cliente = r["cliente"] or "—"
+                c_n, c_num, c_fec, c_cli, c_mon, c_est, c_act = st.columns(
+                    [0.35, 0.9, 0.85, 2.0, 0.95, 0.9, 1.9],
+                    vertical_alignment="center",
+                )
+                zebra = "#fafcff" if idx % 2 == 0 else "#ffffff"
+                with c_n:
+                    st.markdown(
+                        f"<div style='background:{zebra};padding:.35rem 0;'>{idx}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with c_num:
+                    st.markdown(
+                        f"<div class='cot-num' style='background:{zebra};padding:.35rem 0;'>{r['folio']}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with c_fec:
+                    fec = r["fecha"] or "—"
+                    if fec and fec != "—":
+                        try:
+                            fec = date.fromisoformat(str(fec)).strftime("%d/%m/%Y")
+                        except ValueError:
+                            pass
+                    st.markdown(f"<div style='padding:.35rem 0;'>{fec}</div>", unsafe_allow_html=True)
+                with c_cli:
+                    st.markdown(
+                        f"<div class='cot-cli'><strong>{cliente}</strong><span>{desc or '—'}</span></div>",
+                        unsafe_allow_html=True,
+                    )
+                with c_mon:
+                    st.markdown(f"<div><strong>{clp(r['total'])}</strong></div>", unsafe_allow_html=True)
+                with c_est:
+                    st.markdown(
+                        f"<div class='cot-estado {est}'><span class='cot-dot {dot}'></span>{label}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with c_act:
+                    a1, a2, a3, a4 = st.columns(4)
+                    with a1:
+                        if st.button("Ver", key=f"cot_ver_{cid}", use_container_width=True, help="Visualizar"):
+                            st.session_state.cot_mode = "view"
+                            st.session_state.cot_focus_id = cid
+                            st.rerun()
+                    with a2:
+                        if st.button("PDF", key=f"cot_pdf_{cid}", use_container_width=True, help="PDF"):
+                            st.session_state.cot_pdf_id = cid
+                            st.rerun()
+                    with a3:
+                        if st.button("Editar", key=f"cot_edit_{cid}", use_container_width=True, help="Modificar"):
+                            st.session_state.cot_mode = "edit"
+                            st.session_state.cot_focus_id = cid
+                            st.rerun()
+                    with a4:
+                        if st.button("Borrar", key=f"cot_del_{cid}", use_container_width=True, help="Eliminar"):
+                            st.session_state.cot_delete_id = cid
+                            st.rerun()
 
     # =====================================================================
     # VISUALIZAR
