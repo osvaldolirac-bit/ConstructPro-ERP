@@ -458,17 +458,30 @@ def inject_styles() -> None:
   .cot-dot.muted { background: #2b2f36; }
   .cot-dot.danger { background: #b42318; }
 
-  .cxc-estado { font-weight: 800; font-size: .82rem; text-transform: capitalize; }
+  .cxc-estado { font-weight: 800; font-size: .86rem; text-transform: capitalize; }
   .cxc-estado.pendiente { color: #b42318; }
   .cxc-estado.abonado, .cxc-estado.parcial { color: #0b6e99; }
   .cxc-estado.pagado { color: #1f8a65; }
-  .cxc-total-row {
+  .cxc-total-bar {
     background: #eef3f9;
-    border-top: 1px solid var(--line);
-    padding: .65rem .2rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: .85rem 1rem;
+    margin: .85rem 0 1.1rem;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .75rem;
     font-weight: 800;
     color: var(--brand);
-    margin-top: .35rem;
+  }
+  .cxc-total-bar span { display:block; font-size:.72rem; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:.2rem; }
+  .cxc-card-meta { color: var(--muted); font-size: .82rem; margin-top: .2rem; }
+  .cxc-card-meta strong { color: var(--text); }
+  .cxc-money { font-size: .92rem; line-height: 1.45; }
+  .cxc-money b { color: var(--brand); }
+  div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: #fff;
+    margin-bottom: .55rem;
   }
 
   .rm-footer-mark {
@@ -2859,19 +2872,20 @@ elif modulo == "Cuentas por cobrar":
         if not docs:
             empty_state("No hay documentos en cartera. Prueba + Nuevo.")
         else:
-            head = st.columns([0.35, 1.7, 0.75, 0.85, 0.85, 0.85, 0.95, 0.95, 0.95, 0.85, 1.5])
-            headers = [
-                "#", "Cliente", "T.Doc", "Núm.", "F.Emisión", "F.Vence",
-                "Total", "Abonos", "Saldo", "Estado", "Acciones",
-            ]
-            for col, title in zip(head, headers):
-                col.markdown(
-                    f"<div style='font-size:.68rem;font-weight:800;text-transform:uppercase;"
-                    f"letter-spacing:.04em;color:#5b6b7c;padding:.2rem 0;'>{title}</div>",
-                    unsafe_allow_html=True,
-                )
+            sum_total = sum(float(r["monto"] or 0) for r in docs)
+            sum_abonos = sum(float(r["abonado"] or 0) for r in docs)
+            sum_saldo = sum(float(r["saldo"] or 0) for r in docs)
+            st.markdown(
+                f"""
+                <div class="cxc-total-bar">
+                  <div><span>Total</span>{clp(sum_total)}</div>
+                  <div><span>Abonos</span>{clp(sum_abonos)}</div>
+                  <div><span>Saldo</span>{clp(sum_saldo)}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-            sum_total = sum_abonos = sum_saldo = 0.0
             for idx, r in enumerate(docs, start=1):
                 cid = int(r["id"])
                 est_cls = cxc_estado_class(r["estado"])
@@ -2880,73 +2894,65 @@ elif modulo == "Cuentas por cobrar":
                 total_v = float(r["monto"] or 0)
                 abon_v = float(r["abonado"] or 0)
                 saldo_v = float(r["saldo"] or 0)
-                sum_total += total_v
-                sum_abonos += abon_v
-                sum_saldo += saldo_v
-                cols = st.columns(
-                    [0.35, 1.7, 0.75, 0.85, 0.85, 0.85, 0.95, 0.95, 0.95, 0.85, 1.5],
-                    vertical_alignment="center",
-                )
-                zebra = "#fafcff" if idx % 2 == 0 else "#ffffff"
-                vals = [
-                    str(idx),
-                    r["cliente"] or "—",
-                    tipo_lbl,
-                    r["documento"] or "—",
-                    fmt_dmy(r["fecha_emision"]),
-                    fmt_dmy(r["fecha_vencimiento"]),
-                    clp(total_v),
-                    clp(abon_v),
-                    clp(saldo_v),
-                ]
-                for i, v in enumerate(vals):
-                    with cols[i]:
-                        if i == 3 and r["cotizacion_id"]:
-                            st.markdown(
-                                f"<div class='cot-num' style='background:{zebra};padding:.3rem 0;'>{v}</div>",
-                                unsafe_allow_html=True,
-                            )
-                        elif i == 1:
-                            st.markdown(
-                                f"<div style='background:{zebra};padding:.3rem 0;font-weight:700;'>{v}</div>",
-                                unsafe_allow_html=True,
-                            )
-                        else:
-                            st.markdown(
-                                f"<div style='background:{zebra};padding:.3rem 0;'>{v}</div>",
-                                unsafe_allow_html=True,
-                            )
-                with cols[9]:
-                    st.markdown(
-                        f"<div class='cxc-estado {est_cls}' style='background:{zebra};padding:.3rem 0;'>{est_lbl}</div>",
-                        unsafe_allow_html=True,
-                    )
-                with cols[10]:
-                    a1, a2, a3 = st.columns(3)
-                    with a1:
-                        if st.button("Ver", key=f"cxc_ver_{cid}", use_container_width=True, help="Visualizar"):
-                            st.session_state.cxc_mode = "view"
-                            st.session_state.cxc_focus_id = cid
-                            st.rerun()
-                    with a2:
-                        if st.button("Edit", key=f"cxc_edit_{cid}", use_container_width=True, help="Modificar"):
-                            st.session_state.cxc_mode = "edit"
-                            st.session_state.cxc_focus_id = cid
-                            st.rerun()
-                    with a3:
-                        if st.button("Del", key=f"cxc_del_{cid}", use_container_width=True, help="Eliminar"):
-                            st.session_state.cxc_delete_id = cid
-                            st.rerun()
+                cliente = r["cliente"] or "—"
+                doc = r["documento"] or "—"
+                concepto = (r["concepto"] or "").strip()
 
-            tcols = st.columns([0.35, 1.7, 0.75, 0.85, 0.85, 0.85, 0.95, 0.95, 0.95, 0.85, 1.5])
-            with tcols[5]:
-                st.markdown("<div class='cxc-total-row'>Totales</div>", unsafe_allow_html=True)
-            with tcols[6]:
-                st.markdown(f"<div class='cxc-total-row'>{clp(sum_total)}</div>", unsafe_allow_html=True)
-            with tcols[7]:
-                st.markdown(f"<div class='cxc-total-row'>{clp(sum_abonos)}</div>", unsafe_allow_html=True)
-            with tcols[8]:
-                st.markdown(f"<div class='cxc-total-row'>{clp(sum_saldo)}</div>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    c_info, c_money, c_est, c_act = st.columns(
+                        [2.6, 1.5, 1.0, 1.8],
+                        vertical_alignment="center",
+                        gap="medium",
+                    )
+                    with c_info:
+                        st.markdown(
+                            f"""
+                            <div style="padding:.15rem 0 .1rem;">
+                              <div style="font-size:.72rem;color:#5b6b7c;font-weight:700;">#{idx}</div>
+                              <div style="font-size:1.02rem;font-weight:800;color:var(--text);">{cliente}</div>
+                              <div class="cxc-card-meta">
+                                <strong class="cot-num">{doc}</strong> · {tipo_lbl}
+                                {" · " + concepto if concepto else ""}
+                              </div>
+                              <div class="cxc-card-meta">
+                                Emisión {fmt_dmy(r["fecha_emision"])} · Vence {fmt_dmy(r["fecha_vencimiento"])}
+                              </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                    with c_money:
+                        st.markdown(
+                            f"""
+                            <div class="cxc-money">
+                              Total <b>{clp(total_v)}</b><br>
+                              Abonos {clp(abon_v)}<br>
+                              Saldo <b>{clp(saldo_v)}</b>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                    with c_est:
+                        st.markdown(
+                            f"<div class='cxc-estado {est_cls}' style='padding:.4rem 0;'>{est_lbl}</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with c_act:
+                        a1, a2, a3 = st.columns(3, gap="small")
+                        with a1:
+                            if st.button("Ver", key=f"cxc_ver_{cid}", use_container_width=True):
+                                st.session_state.cxc_mode = "view"
+                                st.session_state.cxc_focus_id = cid
+                                st.rerun()
+                        with a2:
+                            if st.button("Editar", key=f"cxc_edit_{cid}", use_container_width=True):
+                                st.session_state.cxc_mode = "edit"
+                                st.session_state.cxc_focus_id = cid
+                                st.rerun()
+                        with a3:
+                            if st.button("Borrar", key=f"cxc_del_{cid}", use_container_width=True):
+                                st.session_state.cxc_delete_id = cid
+                                st.rerun()
 
     # =====================================================================
     # VISUALIZAR
