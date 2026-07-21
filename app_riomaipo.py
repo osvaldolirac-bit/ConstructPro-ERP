@@ -28,7 +28,8 @@ st.set_page_config(
 
 
 def inject_styles() -> None:
-    st.markdown(
+    # st.html keeps <style>/<link>; st.markdown strips them and dumps CSS as text.
+    st.html(
         """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -270,8 +271,7 @@ def inject_styles() -> None:
     to { opacity: 1; transform: translateX(0); }
   }
 </style>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
