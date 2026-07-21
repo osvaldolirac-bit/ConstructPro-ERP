@@ -9,6 +9,9 @@ Inspirado en SOLUERP, con gestión mejorada:
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
+import secrets
 import sqlite3
 from datetime import date, datetime, timedelta
 from functools import lru_cache
@@ -22,7 +25,9 @@ import streamlit.components.v1 as components
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "riomaipo_erp.db"
 LOGO_PATH = BASE_DIR / "static" / "logo_erpmaster.png"
+BG_LOGIN_PATH = BASE_DIR / "static" / "bg_login_plano.png"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+(BASE_DIR / "static").mkdir(parents=True, exist_ok=True)
 
 st.set_page_config(
     page_title="ERP Master · Río Maipo",
@@ -439,12 +444,21 @@ def inject_styles() -> None:
     )
 
 
-@lru_cache(maxsize=1)
-def logo_data_uri() -> str:
-    if not LOGO_PATH.exists():
+@lru_cache(maxsize=2)
+def file_data_uri(path_str: str, mime: str) -> str:
+    path = Path(path_str)
+    if not path.exists():
         return ""
-    encoded = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+def logo_data_uri() -> str:
+    return file_data_uri(str(LOGO_PATH), "image/png")
+
+
+def login_bg_data_uri() -> str:
+    return file_data_uri(str(BG_LOGIN_PATH), "image/png")
 
 
 def render_footer() -> None:
@@ -459,6 +473,168 @@ def render_footer() -> None:
         </div>
         """
     )
+
+
+def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000
+    ).hex()
+    return salt, digest
+
+
+def verify_password(password: str, salt: str, digest: str) -> bool:
+    check = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000
+    ).hex()
+    return hmac.compare_digest(check, digest)
+
+
+def ensure_default_user(c: sqlite3.Connection) -> None:
+    n = c.execute("SELECT COUNT(*) AS n FROM usuarios").fetchone()["n"]
+    if n:
+        return
+    salt, digest = hash_password("RioMaipo2026")
+    c.execute(
+        """
+        INSERT INTO usuarios (usuario, salt, clave_hash, nombre, activo)
+        VALUES (?, ?, ?, ?, 1)
+        """,
+        ("admin", salt, digest, "Administrador"),
+    )
+
+
+def check_login(usuario: str, clave: str) -> bool:
+    c = conn()
+    row = c.execute(
+        "SELECT salt, clave_hash, activo FROM usuarios WHERE lower(usuario)=lower(?)",
+        (usuario.strip(),),
+    ).fetchone()
+    c.close()
+    if not row or int(row["activo"] or 0) != 1:
+        return False
+    return verify_password(clave, row["salt"], row["clave_hash"])
+
+
+def inject_login_styles() -> None:
+    bg = login_bg_data_uri()
+    bg_css = f"url('{bg}') center center / cover no-repeat fixed" if bg else "#0f3a66"
+    st.html(
+        f"""
+<style>
+  [data-testid="stSidebar"],
+  [data-testid="stSidebarCollapsedControl"],
+  [data-testid="stExpandSidebarButton"],
+  [data-testid="stToolbar"],
+  [data-testid="stDecoration"],
+  #MainMenu, footer {{
+    display: none !important;
+    visibility: hidden !important;
+  }}
+  html, body, [data-testid="stAppViewContainer"], .stApp {{
+    background:
+      linear-gradient(165deg, rgba(8,36,72,.52), rgba(12,52,98,.58) 45%, rgba(18,70,120,.50)),
+      {bg_css} !important;
+    min-height: 100vh;
+  }}
+  [data-testid="stHeader"] {{ background: transparent !important; }}
+  .block-container {{
+    max-width: 460px !important;
+    padding-top: 3.2rem !important;
+    padding-bottom: 2rem !important;
+  }}
+  .login-card {{
+    background: rgba(255,255,255,.94);
+    border: 1px solid rgba(255,255,255,.65);
+    border-radius: 18px;
+    padding: 1.45rem 1.35rem 1.25rem;
+    box-shadow: 0 18px 50px rgba(8, 30, 60, .28);
+    text-align: center;
+    backdrop-filter: blur(6px);
+  }}
+  .login-card img.logo {{
+    width: min(220px, 70%);
+    height: auto;
+    margin: 0 auto .35rem;
+    display: block;
+  }}
+  .login-card .kicker {{
+    margin: .15rem 0 .2rem;
+    color: #2f6fed;
+    font-size: .72rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    font-weight: 800;
+    font-family: Manrope, Segoe UI, sans-serif;
+  }}
+  .login-card h1 {{
+    margin: 0;
+    color: #163a5f;
+    font-size: 1.55rem;
+    font-family: "Source Serif 4", Georgia, serif;
+    font-weight: 700;
+  }}
+  .login-card p {{
+    margin: .4rem 0 0;
+    color: #5b6b7c;
+    font-size: .92rem;
+    font-family: Manrope, Segoe UI, sans-serif;
+  }}
+  [data-testid="stForm"] {{
+    background: rgba(255,255,255,.96) !important;
+    border: 1px solid #d7e0ea !important;
+    border-radius: 16px !important;
+    box-shadow: 0 10px 28px rgba(22,58,95,.12) !important;
+  }}
+  .stTextInput input {{
+    background: #fff !important;
+    border: 1px solid #c3cfdb !important;
+    border-radius: 10px !important;
+    color: #1a2b3c !important;
+  }}
+  .stButton > button[kind="primary"],
+  .stButton > button[data-testid="baseButton-primary"] {{
+    background: #2f6fed !important;
+    color: #fff !important;
+    border: 1px solid #255ed4 !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    width: 100%;
+  }}
+  label, [data-testid="stWidgetLabel"] p {{
+    color: #1a2b3c !important;
+    font-weight: 700 !important;
+  }}
+</style>
+        """
+    )
+
+
+def render_login() -> None:
+    inject_login_styles()
+    logo = logo_data_uri()
+    logo_img = f'<img class="logo" src="{logo}" alt="ERP Master" />' if logo else ""
+    st.html(
+        f"""
+        <div class="login-card">
+          {logo_img}
+          <div class="kicker">ERP Master</div>
+          <h1>Río Maipo</h1>
+          <p>Ingrese su usuario y clave para acceder al panel</p>
+        </div>
+        """
+    )
+    with st.form("login_form", clear_on_submit=False):
+        usuario = st.text_input("Usuario", placeholder="admin")
+        clave = st.text_input("Clave", type="password", placeholder="••••••••")
+        ingresar = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
+    if ingresar:
+        if check_login(usuario, clave):
+            st.session_state.auth_ok = True
+            st.session_state.auth_user = usuario.strip()
+            st.rerun()
+        else:
+            st.error("Usuario o clave incorrectos")
 
 
 def page_header(title: str, subtitle: str = "") -> None:
@@ -565,9 +741,6 @@ def empty_state(msg: str) -> None:
     st.markdown(f'<div class="empty-state">{msg}</div>', unsafe_allow_html=True)
 
 
-inject_styles()
-
-
 # ---------------------------------------------------------------------------
 # DB helpers
 # ---------------------------------------------------------------------------
@@ -664,8 +837,17 @@ def init_db() -> None:
             medio TEXT, nota TEXT,
             FOREIGN KEY(cuenta_id) REFERENCES cuentas(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario TEXT UNIQUE NOT NULL,
+            salt TEXT NOT NULL,
+            clave_hash TEXT NOT NULL,
+            nombre TEXT,
+            activo INTEGER DEFAULT 1
+        );
         """
     )
+    ensure_default_user(c)
     if c.execute("SELECT COUNT(*) FROM empresa").fetchone()[0] == 0:
         c.execute(
             """
@@ -825,6 +1007,18 @@ def aging_bucket(venc: date | None, hoy: date | None = None) -> str:
 
 
 init_db()
+
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = ""
+
+if not st.session_state.auth_ok:
+    render_login()
+    st.stop()
+
+inject_styles()
+
 db = conn()
 empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
 
@@ -833,6 +1027,7 @@ empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
 # ---------------------------------------------------------------------------
 razon = empresa["razon_social"] if empresa else "Constructora Río Maipo"
 rut_emp = empresa["rut"] if empresa else "—"
+auth_user = st.session_state.get("auth_user") or "usuario"
 
 MODULOS = [
     "Dashboard",
@@ -857,11 +1052,16 @@ with st.sidebar:
     st.markdown('<hr class="soft-hr">', unsafe_allow_html=True)
     modulo = st.radio("Navegación", MODULOS, label_visibility="collapsed")
     st.markdown('<hr class="soft-hr">', unsafe_allow_html=True)
+    st.caption(f"Sesión: {auth_user}")
     st.caption("Control comercial · cobranza · catálogo · vista 360")
     st.markdown(
         '<span class="stat-pill">erpmaster.cl/riomaipo</span>',
         unsafe_allow_html=True,
     )
+    if st.button("Cerrar sesión", use_container_width=True):
+        st.session_state.auth_ok = False
+        st.session_state.auth_user = ""
+        st.rerun()
 
 if modulo == "Dashboard":
     st.markdown(
@@ -1476,8 +1676,8 @@ elif modulo == "Cuentas por cobrar":
 # ADMINISTRACIÓN
 # ===========================================================================
 else:
-    page_header("Administración", "Datos de la empresa y parámetros operativos del ERP.")
-    tab_emp, tab_par = st.tabs(["Mi empresa", "Parámetros"])
+    page_header("Administración", "Datos de la empresa, parámetros y acceso al sistema.")
+    tab_emp, tab_par, tab_acceso = st.tabs(["Mi empresa", "Parámetros", "Acceso"])
 
     with tab_emp:
         e = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
@@ -1509,6 +1709,28 @@ else:
                 db.commit()
                 st.success("Parámetro actualizado")
                 st.rerun()
+
+    with tab_acceso:
+        st.caption(f"Usuario en sesión: {auth_user}")
+        with st.form("f_clave"):
+            actual = st.text_input("Clave actual", type="password")
+            nueva = st.text_input("Nueva clave", type="password")
+            nueva2 = st.text_input("Repetir nueva clave", type="password")
+            if st.form_submit_button("Cambiar clave", type="primary"):
+                if not check_login(auth_user, actual):
+                    st.error("La clave actual no es correcta")
+                elif len(nueva.strip()) < 6:
+                    st.error("La nueva clave debe tener al menos 6 caracteres")
+                elif nueva != nueva2:
+                    st.error("Las claves nuevas no coinciden")
+                else:
+                    salt, digest = hash_password(nueva.strip())
+                    db.execute(
+                        "UPDATE usuarios SET salt=?, clave_hash=? WHERE lower(usuario)=lower(?)",
+                        (salt, digest, auth_user),
+                    )
+                    db.commit()
+                    st.success("Clave actualizada")
 
 render_footer()
 db.close()
