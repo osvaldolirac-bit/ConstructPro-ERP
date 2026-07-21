@@ -585,58 +585,75 @@ def inject_login_styles() -> None:
   }}
   html, body, [data-testid="stAppViewContainer"], .stApp {{
     background:
-      linear-gradient(165deg, rgba(8,36,72,.52), rgba(12,52,98,.58) 45%, rgba(18,70,120,.50)),
+      linear-gradient(165deg, rgba(8,36,72,.28), rgba(12,52,98,.30) 50%, rgba(18,70,120,.26)),
       {bg_css} !important;
     min-height: 100vh;
   }}
   [data-testid="stHeader"] {{ background: transparent !important; }}
   .block-container {{
-    max-width: 460px !important;
-    padding-top: 3.2rem !important;
-    padding-bottom: 2rem !important;
+    max-width: 100% !important;
+    padding-top: .85rem !important;
+    padding-left: 1.1rem !important;
+    padding-right: 1.1rem !important;
+    padding-bottom: 1rem !important;
   }}
-  .login-card {{
-    background: rgba(255,255,255,.94);
-    border: 1px solid rgba(255,255,255,.65);
-    border-radius: 18px;
-    padding: 1.45rem 1.35rem 1.25rem;
-    box-shadow: 0 18px 50px rgba(8, 30, 60, .28);
-    text-align: center;
-    backdrop-filter: blur(6px);
+  .login-top {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: .35rem;
   }}
-  .login-card img.logo {{
-    width: min(220px, 70%);
+  .login-brand {{
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    opacity: .92;
+  }}
+  .login-brand img {{
+    width: 148px;
     height: auto;
-    margin: 0 auto .35rem;
+    filter: drop-shadow(0 6px 16px rgba(0,0,0,.25));
+  }}
+  .login-brand .txt {{
+    color: #ffffff;
+    font-family: Manrope, Segoe UI, sans-serif;
+  }}
+  .login-brand .txt strong {{
     display: block;
-  }}
-  .login-card .kicker {{
-    margin: .15rem 0 .2rem;
-    color: #2f6fed;
-    font-size: .72rem;
-    letter-spacing: .14em;
-    text-transform: uppercase;
+    font-size: 1.05rem;
     font-weight: 800;
-    font-family: Manrope, Segoe UI, sans-serif;
+    letter-spacing: .02em;
   }}
-  .login-card h1 {{
-    margin: 0;
-    color: #163a5f;
-    font-size: 1.55rem;
-    font-family: "Source Serif 4", Georgia, serif;
-    font-weight: 700;
+  .login-brand .txt span {{
+    display: block;
+    font-size: .78rem;
+    opacity: .9;
   }}
-  .login-card p {{
-    margin: .4rem 0 0;
-    color: #5b6b7c;
-    font-size: .92rem;
-    font-family: Manrope, Segoe UI, sans-serif;
+  /* Botón Acceso (popover) arriba derecha */
+  div[data-testid="stPopover"] > button {{
+    background: rgba(255,255,255,.94) !important;
+    color: #163a5f !important;
+    border: 1px solid rgba(255,255,255,.7) !important;
+    border-radius: 12px !important;
+    font-weight: 800 !important;
+    box-shadow: 0 10px 28px rgba(8,30,60,.22) !important;
+    min-height: 2.6rem !important;
+  }}
+  div[data-testid="stPopover"] > button:hover {{
+    background: #ffffff !important;
+    border-color: #2f6fed !important;
+    color: #2f6fed !important;
+  }}
+  [data-testid="stPopoverBody"],
+  [data-testid="stExpanderDetails"] {{
+    background: rgba(255,255,255,.97) !important;
   }}
   [data-testid="stForm"] {{
-    background: rgba(255,255,255,.96) !important;
-    border: 1px solid #d7e0ea !important;
-    border-radius: 16px !important;
-    box-shadow: 0 10px 28px rgba(22,58,95,.12) !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: .15rem 0 0 !important;
   }}
   .stTextInput input,
   .stSelectbox div[data-baseweb="select"] > div {{
@@ -693,6 +710,7 @@ def _restore_remembered_acceso() -> None:
 
 
 def _persist_remember(acceso: str, recordar: bool) -> None:
+    # Solo recuerda el usuario (nunca la clave).
     if recordar:
         components.html(
             f"""
@@ -701,6 +719,7 @@ def _persist_remember(acceso: str, recordar: bool) -> None:
   const win = window.parent;
   win.localStorage.setItem("rm_remember", "1");
   win.localStorage.setItem("rm_acceso", {json.dumps(acceso)});
+  win.localStorage.removeItem("rm_clave");
 }})();
 </script>
             """,
@@ -717,6 +736,7 @@ def _persist_remember(acceso: str, recordar: bool) -> None:
   const win = window.parent;
   win.localStorage.removeItem("rm_remember");
   win.localStorage.removeItem("rm_acceso");
+  win.localStorage.removeItem("rm_clave");
 })();
 </script>
             """,
@@ -731,18 +751,6 @@ def _persist_remember(acceso: str, recordar: bool) -> None:
 def render_login() -> None:
     inject_login_styles()
     _restore_remembered_acceso()
-    logo = logo_data_uri()
-    logo_img = f'<img class="logo" src="{logo}" alt="ERP Master" />' if logo else ""
-    st.html(
-        f"""
-        <div class="login-card">
-          {logo_img}
-          <div class="kicker">ERP Master</div>
-          <h1>Río Maipo</h1>
-          <p>Seleccione su acceso e ingrese la clave</p>
-        </div>
-        """
-    )
 
     accesos = list_accesos()
     qp_acceso = st.query_params.get("acceso", DEFAULT_ACCESO)
@@ -750,23 +758,43 @@ def render_login() -> None:
         qp_acceso = DEFAULT_ACCESO if DEFAULT_ACCESO in accesos else accesos[0]
     remember_default = st.query_params.get("remember", "") == "1"
 
-    with st.form("login_form", clear_on_submit=False):
-        usuario = st.selectbox(
-            "Acceso",
-            options=accesos,
-            index=accesos.index(qp_acceso),
+    logo = logo_data_uri()
+    logo_img = f'<img src="{logo}" alt="ERP Master" />' if logo else ""
+
+    top_left, top_right = st.columns([3.4, 1.1], vertical_alignment="center")
+    with top_left:
+        st.html(
+            f"""
+            <div class="login-brand">
+              {logo_img}
+              <div class="txt">
+                <strong>Río Maipo</strong>
+                <span>ERP Master · plano de obra</span>
+              </div>
+            </div>
+            """
         )
-        clave = st.text_input("Clave", type="password", placeholder="••••")
-        recordar = st.checkbox("Recordar", value=remember_default)
-        ingresar = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
-    if ingresar:
-        if check_login(usuario, clave):
-            _persist_remember(usuario, recordar)
-            st.session_state.auth_ok = True
-            st.session_state.auth_user = usuario.strip()
-            st.rerun()
-        else:
-            st.error("Acceso o clave incorrectos")
+    with top_right:
+        with st.popover("Acceso", use_container_width=True):
+            with st.form("login_form", clear_on_submit=False):
+                usuario = st.selectbox(
+                    "Usuario",
+                    options=accesos,
+                    index=accesos.index(qp_acceso),
+                )
+                clave = st.text_input("Clave", type="password", placeholder="••••")
+                recordar = st.checkbox("Recordar usuario", value=remember_default)
+                ingresar = st.form_submit_button(
+                    "Ingresar", type="primary", use_container_width=True
+                )
+            if ingresar:
+                if check_login(usuario, clave):
+                    _persist_remember(usuario, bool(recordar))
+                    st.session_state.auth_ok = True
+                    st.session_state.auth_user = usuario.strip()
+                    st.rerun()
+                else:
+                    st.error("Usuario o clave incorrectos")
 
 
 def page_header(title: str, subtitle: str = "") -> None:
