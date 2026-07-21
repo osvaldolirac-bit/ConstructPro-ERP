@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "riomaipo_erp.db"
@@ -66,8 +67,41 @@ def inject_styles() -> None:
     font-family: var(--font-body) !important;
   }
 
-  [data-testid="stHeader"] { background: transparent !important; }
-  #MainMenu, footer, [data-testid="stToolbar"] { visibility: hidden; height: 0; }
+  [data-testid="stHeader"] {
+    background: transparent !important;
+    color: var(--brand) !important;
+  }
+  /* Keep toolbar/header so the sidebar expand control stays reachable */
+  #MainMenu, footer { visibility: hidden; }
+  [data-testid="stToolbar"] {
+    visibility: visible !important;
+    height: auto !important;
+  }
+  /* Hide deploy/chrome chrome, but NEVER the sidebar reopen button */
+  [data-testid="stToolbar"] [data-testid="stAppDeployButton"],
+  [data-testid="stToolbar"] [data-testid="stDecoration"],
+  [data-testid="stStatusWidget"],
+  [data-testid="stToolbarActions"] {
+    display: none !important;
+  }
+  [data-testid="stExpandSidebarButton"],
+  [data-testid="collapsedControl"],
+  [data-testid="stSidebarCollapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    left: .65rem !important;
+    top: .65rem !important;
+    z-index: 100000 !important;
+    width: 2.4rem !important;
+    height: 2.4rem !important;
+    border-radius: 10px !important;
+    background: #ffffff !important;
+    border: 1px solid var(--line-strong) !important;
+    box-shadow: var(--shadow) !important;
+    color: var(--brand) !important;
+  }
   .block-container {
     padding-top: 1.1rem !important;
     padding-bottom: 2.4rem !important;
@@ -329,6 +363,28 @@ def inject_styles() -> None:
   }
 </style>
         """
+    )
+    # If the menu was collapsed, reopen it (CSS previously hid the toggle).
+    components.html(
+        """
+<script>
+(() => {
+  const doc = window.parent.document;
+  const clickExpand = () => {
+    const btn =
+      doc.querySelector('[data-testid="stExpandSidebarButton"]') ||
+      doc.querySelector('[data-testid="collapsedControl"]') ||
+      doc.querySelector('[data-testid="stSidebarCollapsedControl"]');
+    if (btn) btn.click();
+  };
+  clickExpand();
+  setTimeout(clickExpand, 300);
+  setTimeout(clickExpand, 900);
+})();
+</script>
+        """,
+        height=0,
+        width=0,
     )
 
 
