@@ -56,12 +56,14 @@ sudo nginx -T 2>/dev/null | grep -n -E 'riomaipo|laconcepcion'
 
 El `location /riomaipo` debe aparecer **antes** del `return 302 ... laconcepcion`.
 
-## Módulos
+## Módulos (estilo SOLUERP, gestión mejorada)
 
-- Dashboard  
-- Cotizaciones  
-- Cuentas por cobrar  
-- Administración (clientes, parámetros, obras)  
+- **Dashboard** — embudo de cotizaciones, aging de cobranza, alertas de mora/vencimiento  
+- **Clientes** — ficha + vista 360 (deuda y cotizaciones)  
+- **Proveedores** / **Productos** — maestros para cotizar  
+- **Cotizaciones** — ítems desde catálogo, estados, **generar CxC al aprobar**  
+- **Cuentas por cobrar** — cartera, filtros, abonos, días de mora  
+- **Administración** — mi empresa + parámetros (IVA, validez, crédito) 
 
 ## Local
 
