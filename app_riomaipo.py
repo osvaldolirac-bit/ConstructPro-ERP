@@ -3,7 +3,7 @@ ERP Master — Río Maipo
 Inspirado en SOLUERP, con gestión mejorada:
 - Flujo cotización → aprobación → cuenta por cobrar
 - Aging de cobranza y alertas de mora/vencimiento
-- Catálogo de productos, proveedores y vista 360 del cliente
+- Catálogo de productos, proveedores y vista 360 del cliente en CxC
 """
 
 from __future__ import annotations
@@ -1859,7 +1859,7 @@ def render_vista_360_cliente(db: sqlite3.Connection, clientes, key_prefix: str =
                COALESCE(titulo, asunto, proyecto, '') AS Título, total AS Total
         FROM cotizaciones
         WHERE cliente_id=?
-        ORDER BY id DESC
+        ORDER BY COALESCE(fecha, '') DESC, id DESC
         """,
         db,
         params=(cid,),
@@ -2391,9 +2391,12 @@ elif modulo == "Cotizaciones":
             sql += " AND c.estado = 'rechazada'"
         elif est_filtro == "Ingresada":
             sql += " AND c.estado IN ('borrador','enviada')"
-        rows = db.execute(sql + " ORDER BY c.id DESC", params).fetchall()
+        rows = db.execute(
+            sql + " ORDER BY COALESCE(c.fecha, '') DESC, c.id DESC",
+            params,
+        ).fetchall()
 
-        st.caption(f"Mostrando {len(rows)} cotizaciones")
+        st.caption(f"Mostrando {len(rows)} cotizaciones · más nueva arriba")
 
         if not rows:
             empty_state("No hay cotizaciones para estos filtros. Prueba + Nueva.")
