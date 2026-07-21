@@ -493,10 +493,27 @@ def verify_password(password: str, salt: str, digest: str) -> bool:
 
 DEFAULT_ACCESO = "osvaldolira@constructorariomaipo.cl"
 DEFAULT_CLAVE = "9083"
+TIPOS_USUARIO = ["Administrador", "Operador", "Consulta"]
+
+
+def migrate_usuarios_schema(c: sqlite3.Connection) -> None:
+    cols = {r["name"] for r in c.execute("PRAGMA table_info(usuarios)").fetchall()}
+    if "tipo" not in cols:
+        c.execute(
+            "ALTER TABLE usuarios ADD COLUMN tipo TEXT NOT NULL DEFAULT 'Administrador'"
+        )
+    c.execute(
+        """
+        UPDATE usuarios
+        SET tipo='Administrador'
+        WHERE tipo IS NULL OR TRIM(tipo)=''
+        """
+    )
 
 
 def ensure_default_user(c: sqlite3.Connection) -> None:
     """Asegura el usuario principal y aplica la clave inicial una sola vez."""
+    migrate_usuarios_schema(c)
     salt, digest = hash_password(DEFAULT_CLAVE)
     row = c.execute(
         "SELECT id FROM usuarios WHERE lower(usuario)=lower(?)",
@@ -510,10 +527,10 @@ def ensure_default_user(c: sqlite3.Connection) -> None:
             c.execute(
                 """
                 UPDATE usuarios
-                SET salt=?, clave_hash=?, nombre=?, activo=1
+                SET salt=?, clave_hash=?, nombre=?, tipo=?, activo=1
                 WHERE id=?
                 """,
-                (salt, digest, "Osvaldo Lira", row["id"]),
+                (salt, digest, "Osvaldo Lira", "Administrador", row["id"]),
             )
             c.execute(
                 """
@@ -525,10 +542,10 @@ def ensure_default_user(c: sqlite3.Connection) -> None:
     else:
         c.execute(
             """
-            INSERT INTO usuarios (usuario, salt, clave_hash, nombre, activo)
-            VALUES (?, ?, ?, ?, 1)
+            INSERT INTO usuarios (usuario, salt, clave_hash, nombre, tipo, activo)
+            VALUES (?, ?, ?, ?, ?, 1)
             """,
-            (DEFAULT_ACCESO, salt, digest, "Osvaldo Lira"),
+            (DEFAULT_ACCESO, salt, digest, "Osvaldo Lira", "Administrador"),
         )
         c.execute(
             """
@@ -557,15 +574,32 @@ def list_accesos() -> list[str]:
 
 
 def check_login(usuario: str, clave: str) -> bool:
+    return get_user_if_valid(usuario, clave) is not None
+
+
+def get_user_if_valid(usuario: str, clave: str) -> sqlite3.Row | None:
     c = conn()
     row = c.execute(
-        "SELECT salt, clave_hash, activo FROM usuarios WHERE lower(usuario)=lower(?)",
+        """
+        SELECT id, usuario, salt, clave_hash, nombre, tipo, activo
+        FROM usuarios WHERE lower(usuario)=lower(?)
+        """,
         (usuario.strip(),),
     ).fetchone()
     c.close()
     if not row or int(row["activo"] or 0) != 1:
-        return False
-    return verify_password(clave, row["salt"], row["clave_hash"])
+        return None
+    if not verify_password(clave, row["salt"], row["clave_hash"]):
+        return None
+    return row
+
+
+def current_user_tipo() -> str:
+    return st.session_state.get("auth_tipo") or "Consulta"
+
+
+def is_admin_user() -> bool:
+    return current_user_tipo() == "Administrador"
 
 
 def inject_login_styles() -> None:
@@ -801,10 +835,13 @@ def render_login() -> None:
                     "Ingresar", type="primary", use_container_width=True
                 )
             if ingresar:
-                if check_login(usuario, clave):
+                user_row = get_user_if_valid(usuario, clave)
+                if user_row:
                     _persist_remember(usuario, bool(recordar))
                     st.session_state.auth_ok = True
-                    st.session_state.auth_user = usuario.strip()
+                    st.session_state.auth_user = user_row["usuario"]
+                    st.session_state.auth_tipo = user_row["tipo"] or "Consulta"
+                    st.session_state.auth_nombre = user_row["nombre"] or user_row["usuario"]
                     st.rerun()
                 else:
                     st.error("Usuario o clave incorrectos")
@@ -1016,6 +1053,7 @@ def init_db() -> None:
             salt TEXT NOT NULL,
             clave_hash TEXT NOT NULL,
             nombre TEXT,
+            tipo TEXT NOT NULL DEFAULT 'Administrador',
             activo INTEGER DEFAULT 1
         );
         """
@@ -1185,6 +1223,10 @@ if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = ""
+if "auth_tipo" not in st.session_state:
+    st.session_state.auth_tipo = ""
+if "auth_nombre" not in st.session_state:
+    st.session_state.auth_nombre = ""
 
 if not st.session_state.auth_ok:
     render_login()
@@ -1193,7 +1235,19 @@ if not st.session_state.auth_ok:
 inject_styles()
 
 db = conn()
+migrate_usuarios_schema(db)
+db.commit()
 empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
+
+# Hidrata tipo/nombre si la sesión venía de un login anterior
+if st.session_state.auth_ok and st.session_state.auth_user and not st.session_state.auth_tipo:
+    urow = db.execute(
+        "SELECT tipo, nombre FROM usuarios WHERE lower(usuario)=lower(?)",
+        (st.session_state.auth_user,),
+    ).fetchone()
+    if urow:
+        st.session_state.auth_tipo = urow["tipo"] or "Administrador"
+        st.session_state.auth_nombre = urow["nombre"] or st.session_state.auth_user
 
 # ---------------------------------------------------------------------------
 # Shell
@@ -1201,6 +1255,7 @@ empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
 razon = empresa["razon_social"] if empresa else "Constructora Río Maipo"
 rut_emp = empresa["rut"] if empresa else "—"
 auth_user = st.session_state.get("auth_user") or "usuario"
+auth_tipo = st.session_state.get("auth_tipo") or "Consulta"
 
 MODULOS = [
     "Dashboard",
@@ -1226,6 +1281,7 @@ with st.sidebar:
     modulo = st.radio("Navegación", MODULOS, label_visibility="collapsed")
     st.markdown('<hr class="soft-hr">', unsafe_allow_html=True)
     st.caption(f"Sesión: {auth_user}")
+    st.caption(f"Tipo: {auth_tipo}")
     st.caption("Control comercial · cobranza · catálogo · vista 360")
     st.markdown(
         '<span class="stat-pill">erpmaster.cl/riomaipo</span>',
@@ -1234,6 +1290,8 @@ with st.sidebar:
     if st.button("Cerrar sesión", use_container_width=True):
         st.session_state.auth_ok = False
         st.session_state.auth_user = ""
+        st.session_state.auth_tipo = ""
+        st.session_state.auth_nombre = ""
         st.rerun()
 
 if modulo == "Dashboard":
@@ -1849,8 +1907,8 @@ elif modulo == "Cuentas por cobrar":
 # ADMINISTRACIÓN
 # ===========================================================================
 else:
-    page_header("Administración", "Datos de la empresa, parámetros y acceso al sistema.")
-    tab_emp, tab_par, tab_acceso = st.tabs(["Mi empresa", "Parámetros", "Acceso"])
+    page_header("Administración", "Empresa, parámetros y gestión de usuarios del sistema.")
+    tab_emp, tab_par, tab_usuarios = st.tabs(["Mi empresa", "Parámetros", "Usuarios"])
 
     with tab_emp:
         e = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
@@ -1883,13 +1941,37 @@ else:
                 st.success("Parámetro actualizado")
                 st.rerun()
 
-    with tab_acceso:
-        st.caption(f"Usuario en sesión: {auth_user}")
-        with st.form("f_clave"):
+    with tab_usuarios:
+        st.markdown(
+            '<div class="split-title"><h3>Usuarios</h3>'
+            "<span>Gestión de accesos, claves y tipo de usuario</span></div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"Sesión actual: {auth_user} · {auth_tipo}")
+
+        users_df = pd.read_sql_query(
+            """
+            SELECT id AS ID,
+                   usuario AS Usuario,
+                   COALESCE(nombre,'') AS Nombre,
+                   COALESCE(tipo,'Administrador') AS Tipo,
+                   CASE activo WHEN 1 THEN 'activo' ELSE 'inactivo' END AS Estado
+            FROM usuarios
+            ORDER BY Tipo, usuario
+            """,
+            db,
+        )
+        if users_df.empty:
+            empty_state("No hay usuarios registrados.")
+        else:
+            st.dataframe(users_df.drop(columns=["ID"]), use_container_width=True, hide_index=True)
+
+        st.markdown("#### Mi clave")
+        with st.form("f_clave_propia"):
             actual = st.text_input("Clave actual", type="password")
             nueva = st.text_input("Nueva clave", type="password")
             nueva2 = st.text_input("Repetir nueva clave", type="password")
-            if st.form_submit_button("Cambiar clave", type="primary"):
+            if st.form_submit_button("Cambiar mi clave", type="primary"):
                 if not check_login(auth_user, actual):
                     st.error("La clave actual no es correcta")
                 elif len(nueva.strip()) < 4:
@@ -1904,6 +1986,122 @@ else:
                     )
                     db.commit()
                     st.success("Clave actualizada")
+
+        if not is_admin_user():
+            alert_line(
+                "warn",
+                "Solo un usuario <strong>Administrador</strong> puede crear o editar otros usuarios.",
+            )
+        else:
+            tab_nuevo, tab_editar = st.tabs(["Nuevo usuario", "Editar usuario"])
+
+            with tab_nuevo:
+                with st.form("f_user_new"):
+                    u_nuevo = st.text_input("Usuario / email")
+                    n_nuevo = st.text_input("Nombre")
+                    t_nuevo = st.selectbox("Tipo de usuario", TIPOS_USUARIO, index=0)
+                    c_nuevo = st.text_input("Clave inicial", type="password")
+                    c_nuevo2 = st.text_input("Repetir clave", type="password")
+                    if st.form_submit_button("Crear usuario", type="primary"):
+                        if not u_nuevo.strip():
+                            st.error("Ingrese un usuario")
+                        elif len(c_nuevo.strip()) < 4:
+                            st.error("La clave debe tener al menos 4 caracteres")
+                        elif c_nuevo != c_nuevo2:
+                            st.error("Las claves no coinciden")
+                        else:
+                            try:
+                                salt, digest = hash_password(c_nuevo.strip())
+                                db.execute(
+                                    """
+                                    INSERT INTO usuarios (usuario, salt, clave_hash, nombre, tipo, activo)
+                                    VALUES (?,?,?,?,?,1)
+                                    """,
+                                    (
+                                        u_nuevo.strip(),
+                                        salt,
+                                        digest,
+                                        n_nuevo.strip() or None,
+                                        t_nuevo,
+                                    ),
+                                )
+                                db.commit()
+                                st.success(f"Usuario {u_nuevo.strip()} creado")
+                                st.rerun()
+                            except sqlite3.IntegrityError:
+                                st.error("Ese usuario ya existe")
+
+            with tab_editar:
+                rows = db.execute(
+                    """
+                    SELECT id, usuario, nombre, tipo, activo
+                    FROM usuarios
+                    ORDER BY usuario
+                    """
+                ).fetchall()
+                if not rows:
+                    empty_state("No hay usuarios para editar.")
+                else:
+                    sel_id = st.selectbox(
+                        "Usuario a editar",
+                        options=[r["id"] for r in rows],
+                        format_func=lambda i: next(
+                            f"{r['usuario']} · {r['tipo'] or 'Administrador'} · "
+                            f"{'activo' if r['activo'] else 'inactivo'}"
+                            for r in rows
+                            if r["id"] == i
+                        ),
+                        key="edit_user_sel",
+                    )
+                    row = next(r for r in rows if r["id"] == sel_id)
+                    tipo_actual = row["tipo"] if row["tipo"] in TIPOS_USUARIO else "Administrador"
+                    with st.form("f_user_edit"):
+                        n_edit = st.text_input("Nombre", value=row["nombre"] or "")
+                        t_edit = st.selectbox(
+                            "Tipo de usuario",
+                            TIPOS_USUARIO,
+                            index=TIPOS_USUARIO.index(tipo_actual),
+                        )
+                        activo_edit = st.checkbox("Activo", value=bool(row["activo"]))
+                        reset_clave = st.text_input(
+                            "Nueva clave (opcional)",
+                            type="password",
+                            help="Déjela vacía para no cambiar la clave",
+                        )
+                        reset_clave2 = st.text_input("Repetir nueva clave", type="password")
+                        if st.form_submit_button("Guardar cambios", type="primary"):
+                            if row["usuario"] == auth_user and not activo_edit:
+                                st.error("No puedes desactivarte a ti mismo")
+                            elif reset_clave and len(reset_clave.strip()) < 4:
+                                st.error("La nueva clave debe tener al menos 4 caracteres")
+                            elif reset_clave and reset_clave != reset_clave2:
+                                st.error("Las claves nuevas no coinciden")
+                            else:
+                                db.execute(
+                                    """
+                                    UPDATE usuarios
+                                    SET nombre=?, tipo=?, activo=?
+                                    WHERE id=?
+                                    """,
+                                    (
+                                        n_edit.strip() or None,
+                                        t_edit,
+                                        int(activo_edit),
+                                        sel_id,
+                                    ),
+                                )
+                                if reset_clave.strip():
+                                    salt, digest = hash_password(reset_clave.strip())
+                                    db.execute(
+                                        "UPDATE usuarios SET salt=?, clave_hash=? WHERE id=?",
+                                        (salt, digest, sel_id),
+                                    )
+                                db.commit()
+                                if row["usuario"] == auth_user:
+                                    st.session_state.auth_tipo = t_edit
+                                    st.session_state.auth_nombre = n_edit.strip() or auth_user
+                                st.success("Usuario actualizado")
+                                st.rerun()
 
 render_footer()
 db.close()
