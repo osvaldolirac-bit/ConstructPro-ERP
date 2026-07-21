@@ -362,18 +362,20 @@ def inject_styles() -> None:
     padding: 1.1rem 0 .2rem;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    align-items: flex-start;
+    justify-content: flex-start;
     gap: .25rem;
     opacity: .18;
     pointer-events: none;
     user-select: none;
     border-top: 1px solid var(--line);
+    text-align: left;
   }
   .rm-footer-mark img {
     width: min(210px, 52vw);
     height: auto;
     display: block;
+    margin-left: 0;
   }
   .rm-footer-mark span {
     font-size: .68rem;
