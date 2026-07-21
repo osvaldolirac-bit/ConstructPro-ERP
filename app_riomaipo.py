@@ -28,7 +28,8 @@ st.set_page_config(
     page_title="ERP Master · Río Maipo",
     page_icon="◆",
     layout="wide",
-    initial_sidebar_state="expanded",
+    # auto: oculto en móvil/iPhone, visible en escritorio
+    initial_sidebar_state="auto",
 )
 
 
@@ -396,12 +397,19 @@ def inject_styles() -> None:
 </style>
         """
     )
-    # If the menu was collapsed, reopen it (CSS previously hid the toggle).
+    # Desktop: reopen if collapsed. Mobile/iPhone: keep/force sidebar hidden.
     components.html(
         """
 <script>
 (() => {
   const doc = window.parent.document;
+  const win = window.parent;
+  const isMobile = () => {
+    const ua = (win.navigator.userAgent || "").toLowerCase();
+    const phone = /iphone|ipod|android.+mobile|windows phone|mobile/.test(ua);
+    const narrow = win.matchMedia && win.matchMedia("(max-width: 768px)").matches;
+    return phone || narrow;
+  };
   const clickExpand = () => {
     const btn =
       doc.querySelector('[data-testid="stExpandSidebarButton"]') ||
@@ -409,9 +417,20 @@ def inject_styles() -> None:
       doc.querySelector('[data-testid="stSidebarCollapsedControl"]');
     if (btn) btn.click();
   };
-  clickExpand();
-  setTimeout(clickExpand, 300);
-  setTimeout(clickExpand, 900);
+  const clickCollapse = () => {
+    const btn =
+      doc.querySelector('[data-testid="stSidebarCollapseButton"]') ||
+      doc.querySelector('[data-testid="stSidebarCollapse"] button') ||
+      doc.querySelector('section[data-testid="stSidebar"] button[kind="header"]');
+    if (btn) btn.click();
+  };
+  const syncSidebar = () => {
+    if (isMobile()) clickCollapse();
+    else clickExpand();
+  };
+  syncSidebar();
+  setTimeout(syncSidebar, 300);
+  setTimeout(syncSidebar, 900);
 })();
 </script>
         """,
