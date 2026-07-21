@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import secrets
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -490,18 +491,69 @@ def verify_password(password: str, salt: str, digest: str) -> bool:
     return hmac.compare_digest(check, digest)
 
 
+DEFAULT_ACCESO = "osvaldolira@constructorariomaipo.cl"
+DEFAULT_CLAVE = "9083"
+
+
 def ensure_default_user(c: sqlite3.Connection) -> None:
-    n = c.execute("SELECT COUNT(*) AS n FROM usuarios").fetchone()["n"]
-    if n:
-        return
-    salt, digest = hash_password("RioMaipo2026")
-    c.execute(
+    """Asegura el usuario principal y aplica la clave inicial una sola vez."""
+    salt, digest = hash_password(DEFAULT_CLAVE)
+    row = c.execute(
+        "SELECT id FROM usuarios WHERE lower(usuario)=lower(?)",
+        (DEFAULT_ACCESO,),
+    ).fetchone()
+    if row:
+        flag = c.execute(
+            "SELECT valor FROM parametros WHERE clave='auth_seed'"
+        ).fetchone()
+        if not flag or flag["valor"] != "osvaldo_9083":
+            c.execute(
+                """
+                UPDATE usuarios
+                SET salt=?, clave_hash=?, nombre=?, activo=1
+                WHERE id=?
+                """,
+                (salt, digest, "Osvaldo Lira", row["id"]),
+            )
+            c.execute(
+                """
+                INSERT INTO parametros (clave, nombre, valor, unidad)
+                VALUES ('auth_seed', 'Semilla acceso', 'osvaldo_9083', '')
+                ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor
+                """
+            )
+    else:
+        c.execute(
+            """
+            INSERT INTO usuarios (usuario, salt, clave_hash, nombre, activo)
+            VALUES (?, ?, ?, ?, 1)
+            """,
+            (DEFAULT_ACCESO, salt, digest, "Osvaldo Lira"),
+        )
+        c.execute(
+            """
+            INSERT INTO parametros (clave, nombre, valor, unidad)
+            VALUES ('auth_seed', 'Semilla acceso', 'osvaldo_9083', '')
+            ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor
+            """
+        )
+
+
+def list_accesos() -> list[str]:
+    c = conn()
+    rows = c.execute(
         """
-        INSERT INTO usuarios (usuario, salt, clave_hash, nombre, activo)
-        VALUES (?, ?, ?, ?, 1)
+        SELECT usuario FROM usuarios
+        WHERE activo=1
+        ORDER BY CASE WHEN lower(usuario)=lower(?) THEN 0 ELSE 1 END, usuario
         """,
-        ("admin", salt, digest, "Administrador"),
-    )
+        (DEFAULT_ACCESO,),
+    ).fetchall()
+    c.close()
+    users = [r["usuario"] for r in rows]
+    if DEFAULT_ACCESO not in users:
+        users.insert(0, DEFAULT_ACCESO)
+    return users
 
 
 def check_login(usuario: str, clave: str) -> bool:
@@ -586,7 +638,8 @@ def inject_login_styles() -> None:
     border-radius: 16px !important;
     box-shadow: 0 10px 28px rgba(22,58,95,.12) !important;
   }}
-  .stTextInput input {{
+  .stTextInput input,
+  .stSelectbox div[data-baseweb="select"] > div {{
     background: #fff !important;
     border: 1px solid #c3cfdb !important;
     border-radius: 10px !important;
@@ -605,13 +658,79 @@ def inject_login_styles() -> None:
     color: #1a2b3c !important;
     font-weight: 700 !important;
   }}
+  div[data-testid="stCheckbox"] label p {{
+    font-weight: 600 !important;
+    color: #31485c !important;
+  }}
 </style>
         """
     )
 
 
+def _restore_remembered_acceso() -> None:
+    """Si hay acceso guardado en localStorage, lo refleja en la URL una vez."""
+    components.html(
+        """
+<script>
+(() => {
+  const win = window.parent;
+  const params = new URLSearchParams(win.location.search);
+  if (params.get("rm_sync") === "1") return;
+  const remember = win.localStorage.getItem("rm_remember") === "1";
+  const acceso = win.localStorage.getItem("rm_acceso") || "";
+  if (!remember || !acceso) return;
+  if (params.get("acceso") === acceso && params.get("remember") === "1") return;
+  params.set("acceso", acceso);
+  params.set("remember", "1");
+  params.set("rm_sync", "1");
+  win.location.search = params.toString();
+})();
+</script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
+def _persist_remember(acceso: str, recordar: bool) -> None:
+    if recordar:
+        components.html(
+            f"""
+<script>
+(() => {{
+  const win = window.parent;
+  win.localStorage.setItem("rm_remember", "1");
+  win.localStorage.setItem("rm_acceso", {json.dumps(acceso)});
+}})();
+</script>
+            """,
+            height=0,
+            width=0,
+        )
+        st.query_params["acceso"] = acceso
+        st.query_params["remember"] = "1"
+    else:
+        components.html(
+            """
+<script>
+(() => {
+  const win = window.parent;
+  win.localStorage.removeItem("rm_remember");
+  win.localStorage.removeItem("rm_acceso");
+})();
+</script>
+            """,
+            height=0,
+            width=0,
+        )
+        for key in ("acceso", "remember", "rm_sync"):
+            if key in st.query_params:
+                del st.query_params[key]
+
+
 def render_login() -> None:
     inject_login_styles()
+    _restore_remembered_acceso()
     logo = logo_data_uri()
     logo_img = f'<img class="logo" src="{logo}" alt="ERP Master" />' if logo else ""
     st.html(
@@ -620,21 +739,34 @@ def render_login() -> None:
           {logo_img}
           <div class="kicker">ERP Master</div>
           <h1>Río Maipo</h1>
-          <p>Ingrese su usuario y clave para acceder al panel</p>
+          <p>Seleccione su acceso e ingrese la clave</p>
         </div>
         """
     )
+
+    accesos = list_accesos()
+    qp_acceso = st.query_params.get("acceso", DEFAULT_ACCESO)
+    if qp_acceso not in accesos:
+        qp_acceso = DEFAULT_ACCESO if DEFAULT_ACCESO in accesos else accesos[0]
+    remember_default = st.query_params.get("remember", "") == "1"
+
     with st.form("login_form", clear_on_submit=False):
-        usuario = st.text_input("Usuario", placeholder="admin")
-        clave = st.text_input("Clave", type="password", placeholder="••••••••")
+        usuario = st.selectbox(
+            "Acceso",
+            options=accesos,
+            index=accesos.index(qp_acceso),
+        )
+        clave = st.text_input("Clave", type="password", placeholder="••••")
+        recordar = st.checkbox("Recordar", value=remember_default)
         ingresar = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
     if ingresar:
         if check_login(usuario, clave):
+            _persist_remember(usuario, recordar)
             st.session_state.auth_ok = True
             st.session_state.auth_user = usuario.strip()
             st.rerun()
         else:
-            st.error("Usuario o clave incorrectos")
+            st.error("Acceso o clave incorrectos")
 
 
 def page_header(title: str, subtitle: str = "") -> None:
@@ -847,7 +979,6 @@ def init_db() -> None:
         );
         """
     )
-    ensure_default_user(c)
     if c.execute("SELECT COUNT(*) FROM empresa").fetchone()[0] == 0:
         c.execute(
             """
@@ -957,6 +1088,7 @@ def init_db() -> None:
             """,
             (em2.isoformat(), ve2.isoformat()),
         )
+    ensure_default_user(c)
     c.commit()
     c.close()
 
@@ -1719,8 +1851,8 @@ else:
             if st.form_submit_button("Cambiar clave", type="primary"):
                 if not check_login(auth_user, actual):
                     st.error("La clave actual no es correcta")
-                elif len(nueva.strip()) < 6:
-                    st.error("La nueva clave debe tener al menos 6 caracteres")
+                elif len(nueva.strip()) < 4:
+                    st.error("La nueva clave debe tener al menos 4 caracteres")
                 elif nueva != nueva2:
                     st.error("Las claves nuevas no coinciden")
                 else:
