@@ -221,15 +221,16 @@ def init_db() -> None:
             ],
         )
         # Cotización ejemplo
-        c.execute(
+        cur = c.cursor()
+        cur.execute(
             """
             INSERT INTO cotizaciones (folio, cliente_id, asunto, proyecto, estado, fecha, validez_dias, subtotal, iva, total, notas)
             VALUES ('COT-0001', 1, 'Etapa 1 terminaciones', 'Condominio Río Maipo', 'enviada', ?, 30, 15692000, 2981480, 18673480, 'Referencia SOLUERP')
             """,
             (date.today().isoformat(),),
         )
-        cid = c.lastrowid
-        c.executemany(
+        cid = cur.lastrowid
+        cur.executemany(
             """
             INSERT INTO cotizacion_items (cotizacion_id, producto_id, descripcion, unidad, cantidad, precio_unitario, total)
             VALUES (?,?,?,?,?,?,?)
@@ -242,15 +243,15 @@ def init_db() -> None:
         # CxC ejemplo
         em = date.today() - timedelta(days=25)
         ve = date.today() - timedelta(days=5)
-        c.execute(
+        cur.execute(
             """
             INSERT INTO cuentas (documento, cliente_id, tipo_doc, concepto, fecha_emision, fecha_vencimiento, monto, abonado, saldo, estado)
             VALUES ('EP-0001', 1, 'EP', 'Estado de pago N°1', ?, ?, 15000000, 5000000, 10000000, 'parcial')
             """,
             (em.isoformat(), ve.isoformat()),
         )
-        cxc = c.lastrowid
-        c.execute(
+        cxc = cur.lastrowid
+        cur.execute(
             "INSERT INTO abonos (cuenta_id, fecha, monto, medio, nota) VALUES (?,?,?,?,?)",
             (cxc, (date.today() - timedelta(days=10)).isoformat(), 5000000, "transferencia", "Abono parcial"),
         )
