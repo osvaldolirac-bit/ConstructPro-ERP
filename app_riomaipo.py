@@ -589,13 +589,26 @@ def inject_login_styles() -> None:
       {bg_css} !important;
     min-height: 100vh;
   }}
-  [data-testid="stHeader"] {{ background: transparent !important; }}
+  [data-testid="stHeader"] {{
+    background: transparent !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    pointer-events: none !important;
+  }}
+  [data-testid="stHeader"] * {{
+    pointer-events: none !important;
+  }}
   .block-container {{
     max-width: 100% !important;
-    padding-top: .85rem !important;
+    padding-top: 1.1rem !important;
     padding-left: 1.1rem !important;
     padding-right: 1.1rem !important;
     padding-bottom: 1rem !important;
+  }}
+  /* Asegura el botón Acceso por encima del plano */
+  div[data-testid="stPopover"] {{
+    position: relative;
+    z-index: 20;
   }}
   .login-top {{
     display: flex;
