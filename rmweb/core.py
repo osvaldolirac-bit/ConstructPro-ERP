@@ -394,6 +394,23 @@ def sync_cuenta_cotizacion_links(c: sqlite3.Connection) -> int:
             cot_by_fac[key] = cot
 
     linked = 0
+
+    def _link(cu_id: int, cot_id: int, num: str | None) -> None:
+        nonlocal linked
+        if num:
+            c.execute(
+                """
+                UPDATE cuentas
+                SET cotizacion_id=?, num_factura=?, facturado=1
+                WHERE id=?
+                """,
+                (cot_id, num, cu_id),
+            )
+        else:
+            c.execute("UPDATE cuentas SET cotizacion_id=? WHERE id=?", (cot_id, cu_id))
+        c.execute("UPDATE cotizaciones SET cxc_id=? WHERE id=?", (cu_id, cot_id))
+        linked += 1
+
     for cu in cuentas:
         if not cu["cliente_id"]:
             continue
@@ -407,16 +424,51 @@ def sync_cuenta_cotizacion_links(c: sqlite3.Connection) -> int:
             continue
         if cot["cxc_id"] and int(cot["cxc_id"]) != int(cu["id"]):
             continue
-        c.execute(
-            """
-            UPDATE cuentas
-            SET cotizacion_id=?, num_factura=?, facturado=1
-            WHERE id=?
-            """,
-            (cot["id"], num, cu["id"]),
-        )
-        c.execute("UPDATE cotizaciones SET cxc_id=? WHERE id=?", (cu["id"], cot["id"]))
-        linked += 1
+        _link(int(cu["id"]), int(cot["id"]), num)
+
+    # Segundo paso: cuentas y cotizaciones aún libres, mismo cliente y monto,
+    # emparejadas por fecha (útil para arriendos mensuales sin "factura N" en el título).
+    free_cuentas = c.execute(
+        """
+        SELECT id, cliente_id, monto, fecha_emision, fecha_vencimiento, num_factura, documento, concepto
+        FROM cuentas
+        WHERE cotizacion_id IS NULL AND cliente_id IS NOT NULL
+        ORDER BY COALESCE(fecha_emision, fecha_vencimiento, ''), id
+        """
+    ).fetchall()
+    free_cots = c.execute(
+        """
+        SELECT id, cliente_id, total, fecha, asunto, titulo, proyecto
+        FROM cotizaciones
+        WHERE cxc_id IS NULL AND cliente_id IS NOT NULL
+        ORDER BY COALESCE(fecha, ''), id
+        """
+    ).fetchall()
+    used_cots: set[int] = set()
+    for cu in free_cuentas:
+        cid = int(cu["cliente_id"])
+        monto = round(float(cu["monto"] or 0), 2)
+        match = None
+        for cot in free_cots:
+            if int(cot["id"]) in used_cots:
+                continue
+            if int(cot["cliente_id"]) != cid:
+                continue
+            if round(float(cot["total"] or 0), 2) != monto:
+                continue
+            # No reutilizar cotizaciones que ya tienen Nº factura distinto
+            cot_fac = extract_num_factura(cot["asunto"], cot["titulo"], cot["proyecto"])
+            cu_fac = (cu["num_factura"] or "").strip() or extract_num_factura(cu["documento"], cu["concepto"]) or ""
+            if cot_fac and cu_fac and str(cot_fac) != str(cu_fac):
+                continue
+            match = cot
+            break
+        if not match:
+            continue
+        used_cots.add(int(match["id"]))
+        num = (cu["num_factura"] or "").strip() or extract_num_factura(cu["documento"], cu["concepto"]) or ""
+        _link(int(cu["id"]), int(match["id"]), num or None)
+
     c.commit()
     return linked
 
