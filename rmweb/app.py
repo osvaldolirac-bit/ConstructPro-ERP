@@ -95,6 +95,10 @@ def inject_globals():
 def login():
     if session.get("auth_ok"):
         return redirect(url_for("dashboard"))
+    accesos = core.list_accesos()
+    default_user = request.form.get("usuario") or request.args.get("acceso") or core.DEFAULT_ACCESO
+    if default_user not in accesos:
+        default_user = accesos[0] if accesos else core.DEFAULT_ACCESO
     error = None
     if request.method == "POST":
         user = core.get_user_if_valid(
@@ -108,7 +112,13 @@ def login():
             session["auth_tipo"] = user["tipo"] or "Consulta"
             return _safe_next_redirect(request.args.get("next"))
         error = "Usuario o clave incorrectos"
-    return render_template("login.html", error=error, default_user=core.DEFAULT_ACCESO)
+        default_user = request.form.get("usuario") or default_user
+    return render_template(
+        "login.html",
+        error=error,
+        default_user=default_user,
+        accesos=accesos,
+    )
 
 
 @app.route("/favicon.ico")

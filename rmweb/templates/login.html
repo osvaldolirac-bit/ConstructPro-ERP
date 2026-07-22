@@ -7,27 +7,92 @@
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="shortcut icon" href="{{ url_for('favicon') }}">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
 </head>
-<body>
-  <div class="login-wrap">
-    <div class="login-card">
-      <div class="text-uppercase small fw-bold text-secondary mb-1">ERP Master</div>
-      <h1>Río Maipo</h1>
-      <p>Ingresa con tu usuario para continuar.</p>
-      {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
-      <form method="post">
-        <div class="mb-3">
-          <label class="form-label fw-bold">Usuario</label>
-          <input class="form-control" name="usuario" value="{{ default_user }}" required>
+<body class="login-page">
+  <div class="login-stage">
+    <header class="login-top">
+      <div class="login-brand">
+        <img src="{{ url_for('static', filename='logo_erpmaster.png') }}" alt="ERP Master">
+        <div class="txt">
+          <strong>Río Maipo</strong>
+          <span>ERP Master</span>
         </div>
-        <div class="mb-3">
-          <label class="form-label fw-bold">Clave</label>
-          <input class="form-control" type="password" name="clave" required>
+      </div>
+
+      <div class="dropdown login-access">
+        <button class="btn login-access-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+          Acceso
+        </button>
+        <div class="dropdown-menu dropdown-menu-end login-access-menu p-3">
+          {% if error %}<div class="alert alert-danger py-2 mb-2">{{ error }}</div>{% endif %}
+          <form method="post" id="loginForm">
+            <div class="mb-2">
+              <label class="form-label fw-bold mb-1">Usuario</label>
+              <select class="form-select" name="usuario" id="usuario" required>
+                {% for u in accesos %}
+                <option value="{{ u }}" {% if u == default_user %}selected{% endif %}>{{ u }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label fw-bold mb-1">Clave</label>
+              <input class="form-control" type="password" name="clave" placeholder="••••" required autocomplete="current-password">
+            </div>
+            <div class="form-check mb-3">
+              <input class="form-check-input" type="checkbox" name="recordar" value="1" id="recordar">
+              <label class="form-check-label" for="recordar">Recordar usuario</label>
+            </div>
+            <button class="btn btn-primary w-100 fw-bold" type="submit">Ingresar</button>
+          </form>
         </div>
-        <button class="btn btn-primary w-100 fw-bold" type="submit">Ingresar</button>
-      </form>
+      </div>
+    </header>
+
+    <div class="login-caption">
+      <div class="login-caption-kicker">Constructora Río Maipo</div>
+      <div class="login-caption-title">Vista arquitectónica · Manhattan, NY</div>
     </div>
   </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+  (function () {
+    const sel = document.getElementById('usuario');
+    const remember = document.getElementById('recordar');
+    const form = document.getElementById('loginForm');
+    const savedRemember = localStorage.getItem('rm_remember') === '1';
+    const savedUser = localStorage.getItem('rm_acceso') || '';
+    if (savedRemember && savedUser && sel) {
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === savedUser) {
+          sel.selectedIndex = i;
+          break;
+        }
+      }
+      if (remember) remember.checked = true;
+    }
+    {% if error %}
+    // Si falló el login, mantener el menú abierto
+    const btn = document.querySelector('.login-access-btn');
+    if (btn) new bootstrap.Dropdown(btn).show();
+    {% endif %}
+    if (form) {
+      form.addEventListener('submit', function () {
+        if (remember && remember.checked) {
+          localStorage.setItem('rm_remember', '1');
+          localStorage.setItem('rm_acceso', sel.value);
+          localStorage.removeItem('rm_clave');
+        } else {
+          localStorage.removeItem('rm_remember');
+          localStorage.removeItem('rm_acceso');
+          localStorage.removeItem('rm_clave');
+        }
+      });
+    }
+  })();
+  </script>
 </body>
 </html>

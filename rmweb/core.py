@@ -243,6 +243,23 @@ def next_code(c: sqlite3.Connection, table: str, field: str, prefix: str) -> str
     return f"{prefix}-{n:04d}"
 
 
+def list_accesos() -> list[str]:
+    c = conn()
+    rows = c.execute(
+        """
+        SELECT usuario FROM usuarios
+        WHERE activo=1
+        ORDER BY CASE WHEN lower(usuario)=lower(?) THEN 0 ELSE 1 END, usuario
+        """,
+        (DEFAULT_ACCESO,),
+    ).fetchall()
+    c.close()
+    users = [r["usuario"] for r in rows]
+    if DEFAULT_ACCESO not in users:
+        users.insert(0, DEFAULT_ACCESO)
+    return users
+
+
 def get_user_if_valid(usuario: str, clave: str):
     c = conn()
     row = c.execute(
