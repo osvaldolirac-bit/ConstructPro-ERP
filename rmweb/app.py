@@ -903,9 +903,9 @@ def cuentas_abono(cuenta_id: int):
             db.commit()
             nuevo = db.execute("SELECT saldo FROM cuentas WHERE id=?", (cuenta_id,)).fetchone()
             if nuevo and float(nuevo["saldo"] or 0) <= 0:
-                flash(f"Pago registrado · documento pagado ({core.clp(monto)})", "ok")
+                flash(f"Pago de {core.clp(monto)} registrado. Documento pagado.", "ok")
             else:
-                flash(f"Abono registrado · {core.clp(monto)}", "ok")
+                flash(f"Abono de {core.clp(monto)} registrado correctamente.", "ok")
             db.close()
             return redirect(url_for("cuentas_detalle", cuenta_id=cuenta_id))
 
