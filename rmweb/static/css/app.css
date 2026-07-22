@@ -140,7 +140,7 @@ body {
 .estado.aprobada, .estado.pagado { color: var(--ok); }
 .estado.rechazada, .estado.pendiente { color: var(--danger); }
 .estado.ingresada { color: var(--cyan); }
-.estado.abonado { color: #e67e22; }
+.estado.abonado { color: var(--accent); }
 .dot {
   width: 9px; height: 9px; border-radius: 50%;
   display: inline-block; margin-right: .35rem;
