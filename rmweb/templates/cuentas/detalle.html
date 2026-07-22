@@ -15,7 +15,7 @@
     <a class="btn btn-info text-white" href="{{ url_for('cuentas_pdf', cuenta_id=cuenta.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
     <a class="btn btn-warning text-white" href="{{ url_for('cuentas_form', cuenta_id=cuenta.id) }}">Editar</a>
     {% if cuenta.saldo and cuenta.saldo > 0 %}
-    <a class="btn btn-success" href="{{ url_for('cuentas_abono', cuenta_id=cuenta.id) }}"><i class="bi bi-cash-coin"></i> Pagar / Abonar</a>
+    <a class="btn btn-primary" href="{{ url_for('cuentas_abono', cuenta_id=cuenta.id) }}"><i class="bi bi-wallet2"></i> Registrar pago</a>
     {% endif %}
   </div>
 </div>
