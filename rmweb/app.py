@@ -699,19 +699,25 @@ def _load_vista360(db, cid: int | None):
             d["factura_display"] = fac_disp
             cuentas.append(d)
         deuda = sum(float(x["saldo"] or 0) for x in cuentas)
-        abonos = db.execute(
+        abono_rows = db.execute(
             """
-            SELECT a.fecha,
-                   COALESCE(cot.folio, cu.documento) AS documento,
-                   a.monto, a.medio, a.nota
+            SELECT a.fecha, a.monto, a.medio, a.nota,
+                   cu.documento, cu.num_factura, cu.cotizacion_id,
+                   cot.folio AS cot_folio
             FROM abonos a
             JOIN cuentas cu ON cu.id=a.cuenta_id
             LEFT JOIN cotizaciones cot ON cot.id = cu.cotizacion_id
             WHERE cu.cliente_id=?
-            ORDER BY a.id DESC LIMIT 20
+            ORDER BY date(a.fecha) DESC, a.id DESC
             """,
             (cid,),
         ).fetchall()
+        abonos = []
+        for r in abono_rows:
+            d = dict(r)
+            doc_disp, _fac = core.cuenta_doc_factura_display(d)
+            d["documento"] = doc_disp
+            abonos.append(d)
         cots = db.execute(
             """
             SELECT id, folio, fecha, estado, total,
@@ -736,6 +742,7 @@ def cuentas_360():
     if not cid and clientes:
         cid = clientes[0]["id"]
     cli, cuentas, abonos, cots, deuda = _load_vista360(db, cid)
+    sum_abonos = sum(float(a["monto"] or 0) for a in abonos)
     db.close()
     return render_template(
         "cuentas/vista360.html",
@@ -745,6 +752,7 @@ def cuentas_360():
         cli=cli,
         cuentas=cuentas,
         abonos=abonos,
+        sum_abonos=sum_abonos,
         cots=cots,
         deuda=deuda,
     )

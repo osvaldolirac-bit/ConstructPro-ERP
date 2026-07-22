@@ -34,7 +34,7 @@
 <div class="panel">
   <h5 class="fw-bold">Cuentas por cobrar</h5>
   <table class="table table-sm datatable">
-    <thead><tr><th>Documento</th><th>Factura</th><th>Vence</th><th>Total</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Documento</th><th>Factura</th><th>Vence</th><th>Total</th><th>Abonos</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
     <tbody>
       {% for x in cuentas %}
       <tr>
@@ -42,6 +42,7 @@
         <td>{{ x.factura_display }}</td>
         <td>{{ fmt_dmy(x.fecha_vencimiento) }}</td>
         <td>{{ clp(x.monto) }}</td>
+        <td>{{ clp(x.abonado) }}</td>
         <td>{{ clp(x.saldo) }}</td>
         <td><span class="estado {{ cxc_estado_class(x.estado) }}">{{ cxc_estado_label(x.estado) }}</span></td>
         <td class="actions-cell">
@@ -53,12 +54,16 @@
   </table>
 </div>
 <div class="panel">
-  <h5 class="fw-bold">Últimos abonos</h5>
+  <h5 class="fw-bold">Abonos
+    {% if abonos %}
+    <span class="text-muted fw-normal fs-6">· {{ abonos|length }} · {{ clp(sum_abonos) }}</span>
+    {% endif %}
+  </h5>
   <table class="table table-sm">
     <thead><tr><th>Fecha</th><th>Documento</th><th>Monto</th><th>Medio</th></tr></thead>
     <tbody>
       {% for a in abonos %}
-      <tr><td>{{ fmt_dmy(a.fecha) }}</td><td>{{ a.documento }}</td><td>{{ clp(a.monto) }}</td><td>{{ a.medio }}</td></tr>
+      <tr><td>{{ fmt_dmy(a.fecha) }}</td><td><span class="cot-num">{{ a.documento }}</span></td><td>{{ clp(a.monto) }}</td><td>{{ a.medio or '—' }}</td></tr>
       {% else %}
       <tr><td colspan="4" class="text-muted">Sin abonos</td></tr>
       {% endfor %}

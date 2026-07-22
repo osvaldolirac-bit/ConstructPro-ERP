@@ -1079,7 +1079,7 @@ def estado_cuenta_pdf_bytes(cliente, cuentas, abonos, cots, deuda, empresa_row) 
 
     pdf.ln(5)
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 7, _pdf_txt("Últimos abonos"), ln=1)
+    pdf.cell(0, 7, _pdf_txt("Abonos"), ln=1)
     aw = [28, 40, 35, 77]
     pdf.set_fill_color(220, 220, 220)
     pdf.set_font("Helvetica", "B", 8)
