@@ -18,10 +18,15 @@
   <form method="post" id="cotForm">
     <div class="row g-3 mb-3">
       <div class="col-md-2">
+        <label class="form-label fw-bold">Fecha</label>
+        <input class="form-control" type="date" name="fecha" required
+               value="{{ edit.fecha if edit and edit.fecha else hoy }}">
+      </div>
+      <div class="col-md-2">
         <label class="form-label fw-bold">Versión</label>
         <input class="form-control" name="version" value="{{ edit.version if edit and edit.version else '1' }}">
       </div>
-      <div class="col-md-5">
+      <div class="col-md-4">
         <label class="form-label fw-bold">Cliente</label>
         <select class="form-select" name="cliente_id" id="cliente_id" required>
           {% for c in clientes %}
@@ -33,7 +38,7 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-5">
+      <div class="col-md-4">
         <label class="form-label fw-bold">Título cotización (barra PDF)</label>
         <input class="form-control" name="titulo" id="titulo" value="{{ titulo_default }}">
       </div>

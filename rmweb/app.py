@@ -339,6 +339,7 @@ def cotizaciones_form(cot_id: int | None = None):
         proyecto = (request.form.get("proyecto") or "").strip() or None
         asunto = (request.form.get("asunto") or "").strip() or None
         estado = request.form.get("estado") or "borrador"
+        fecha = (request.form.get("fecha") or "").strip() or date.today().isoformat()
         validez = int(request.form.get("validez") or validez_def)
         gg_pct = float(request.form.get("gg_pct") or gg_def)
         utilidad_pct = float(request.form.get("utilidad_pct") or util_def)
@@ -398,14 +399,14 @@ def cotizaciones_form(cot_id: int | None = None):
                 db.execute(
                     """
                     UPDATE cotizaciones SET
-                      cliente_id=?, asunto=?, proyecto=?, estado=?, validez_dias=?,
+                      cliente_id=?, asunto=?, proyecto=?, estado=?, fecha=?, validez_dias=?,
                       version=?, titulo=?, gg_pct=?, utilidad_pct=?,
                       gg_monto=?, utilidad_monto=?, valor_neto=?,
                       subtotal=?, iva=?, total=?, notas=?
                     WHERE id=?
                     """,
                     (
-                        cliente_id, asunto, proyecto, estado, validez,
+                        cliente_id, asunto, proyecto, estado, fecha, validez,
                         version, titulo, gg_pct, utilidad_pct,
                         tots["gg_monto"], tots["utilidad_monto"], tots["valor_neto"],
                         tots["subtotal"], tots["iva"], tots["total"], notas, edit["id"],
@@ -427,7 +428,7 @@ def cotizaciones_form(cot_id: int | None = None):
                     """,
                     (
                         folio, cliente_id, asunto, proyecto, estado,
-                        date.today().isoformat(), validez,
+                        fecha, validez,
                         version, titulo, gg_pct, utilidad_pct,
                         tots["gg_monto"], tots["utilidad_monto"], tots["valor_neto"],
                         tots["subtotal"], tots["iva"], tots["total"], notas,
@@ -472,6 +473,7 @@ def cotizaciones_form(cot_id: int | None = None):
         util_def=util_def,
         iva_def=iva_def,
         validez_def=validez_def,
+        hoy=date.today().isoformat(),
         slots=16,
     )
 
