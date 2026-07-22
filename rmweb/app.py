@@ -617,6 +617,11 @@ def cuentas_list():
         """
         params.extend([like, like, like, like, like])
     sql += " ORDER BY cu.id DESC"
+    # Recalcular saldos vs abonos antes de KPIs/tabla.
+    for row in db.execute("SELECT id FROM cuentas").fetchall():
+        core.recalc_cuenta(db, int(row["id"]))
+    db.commit()
+
     rows = db.execute(sql, params).fetchall()
     docs = []
     for r in rows:
@@ -625,18 +630,31 @@ def cuentas_list():
         d["doc_display"] = doc_disp
         d["factura_display"] = fac_disp
         docs.append(d)
+
     total_docs = len(docs)
     total_monto = sum(float(d["monto"] or 0) for d in docs)
-    pend = [d for d in docs if core.cxc_estado_class(d["estado"]) == "pendiente"]
-    abon = [d for d in docs if core.cxc_estado_class(d["estado"]) == "abonado"]
-    pag = [d for d in docs if core.cxc_estado_class(d["estado"]) == "pagado"]
+
+    def _bucket(d: dict) -> str:
+        """Clasifica por saldo/abonado real, no solo por texto de estado."""
+        saldo = float(d.get("saldo") or 0)
+        abonado = float(d.get("abonado") or 0)
+        if saldo <= 0:
+            return "pagado"
+        if abonado > 0:
+            return "abonado"
+        return "pendiente"
+
+    abon = [d for d in docs if _bucket(d) == "abonado"]
+    pag = [d for d in docs if _bucket(d) == "pagado"]
+    # Pendientes = cartera abierta real (todo documento con saldo > 0).
+    abiertos = [d for d in docs if float(d.get("saldo") or 0) > 0]
     kpis = {
         "total_docs": total_docs,
         "total_monto": total_monto,
-        "pend_n": len(pend),
-        "pend_m": sum(float(d["monto"] or 0) for d in pend),
+        "pend_n": len(abiertos),
+        "pend_m": sum(float(d["saldo"] or 0) for d in abiertos),
         "abon_n": len(abon),
-        "abon_m": sum(float(d["monto"] or 0) for d in abon),
+        "abon_m": sum(float(d["saldo"] or 0) for d in abon),
         "pag_n": len(pag),
         "pag_m": sum(float(d["monto"] or 0) for d in pag),
         "tasa": (len(pag) / total_docs * 100) if total_docs else 0,
