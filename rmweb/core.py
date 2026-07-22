@@ -490,7 +490,8 @@ def cotizacion_pdf_bytes(cot, items, empresa_row, iva_pct: float = 0.19) -> byte
     pdf.cell(table_w, 6, title, border=1, align="C", fill=True)
 
     headers = ["ITEM", "ESPECIFICACIÓN", "OBS", "UND", "CANTIDAD", "VALOR", "TOTAL"]
-    widths = [14, 74, 58, 16, 24, 37, 38]
+    # Anchos alineados a la barra título (261 mm)
+    widths = [14, 90, 42, 14, 24, 38, 39]
 
     def draw_row(y: float, cells, fill: bool = False, bold: bool = False):
         pdf.set_xy(x0, y)
@@ -551,9 +552,9 @@ def cotizacion_pdf_bytes(cot, items, empresa_row, iva_pct: float = 0.19) -> byte
                     y,
                     [
                         (code, "C"),
-                        (desc[:46], "L"),
-                        (obs[:34], "L"),
-                        (und, "C"),
+                        (desc[:58], "L"),
+                        ("", "L"),
+                        ("", "C"),
                         ("", "R"),
                         ("", "R"),
                         ("", "R"),
@@ -565,9 +566,9 @@ def cotizacion_pdf_bytes(cot, items, empresa_row, iva_pct: float = 0.19) -> byte
                     y,
                     [
                         (code, "C"),
-                        (desc[:46], "L"),
-                        (obs[:34], "L"),
-                        (und, "C"),
+                        (desc[:58], "L"),
+                        (obs[:28], "L"),
+                        (und[:6], "C"),
                         (fmt_cant_pdf(cant), "R"),
                         (f"$ {fmt_clp_plain(pu)}", "R"),
                         (f"$ {fmt_clp_plain(tot)}", "R"),
