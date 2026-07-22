@@ -616,7 +616,7 @@ def cuentas_list():
                  OR cu.concepto LIKE ? OR cot.folio LIKE ?)
         """
         params.extend([like, like, like, like, like])
-    sql += " ORDER BY cu.id DESC"
+    sql += " ORDER BY date(cu.fecha_emision) DESC, cu.id DESC"
     # Recalcular saldos vs abonos antes de KPIs/tabla.
     for row in db.execute("SELECT id FROM cuentas").fetchall():
         core.recalc_cuenta(db, int(row["id"]))
