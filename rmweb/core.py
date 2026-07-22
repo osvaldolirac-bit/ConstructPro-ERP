@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 import sqlite3
 from datetime import date, timedelta
@@ -167,6 +168,7 @@ def init_db() -> None:
     )
     _ensure_columns(c, "cotizacion_items", [("obs", "TEXT"), ("orden", "INTEGER DEFAULT 0")])
     _ensure_columns(c, "cuentas", [("facturado", "INTEGER DEFAULT 0"), ("num_factura", "TEXT")])
+    sync_cuenta_cotizacion_links(c)
 
     if c.execute("SELECT COUNT(*) FROM empresa").fetchone()[0] == 0:
         c.execute(
@@ -315,7 +317,122 @@ def recalc_cuenta(c: sqlite3.Connection, cuenta_id: int) -> None:
 
 
 def _pdf_txt(value) -> str:
-    return str(value or "").encode("latin-1", "replace").decode("latin-1")
+    s = str(value or "")
+    # Evita "?" por guiones tipográficos / bullets fuera de latin-1
+    s = (
+        s.replace("—", "-")
+        .replace("–", "-")
+        .replace("•", "-")
+        .replace("·", "|")
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("’", "'")
+    )
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
+def extract_num_factura(*texts) -> str | None:
+    """Extrae Nº de factura exacto desde documento/asunto/concepto."""
+    blob = " ".join(str(t or "") for t in texts).strip()
+    if not blob:
+        return None
+    if re.fullmatch(r"\d+", blob):
+        return blob
+    patterns = [
+        r"\bfactura\s+(\d+)\b",
+        r"\bfact\.?\s+(\d+)\b",
+        r"\bsoluerp\s+(\d+)\b",
+        r"\bFAC[- ]?(\d+)\b",
+        r"^(?:FAC|FA|EP|ND)[- ]?(\d+)$",
+    ]
+    for pat in patterns:
+        m = re.search(pat, blob, flags=re.IGNORECASE | re.MULTILINE)
+        if m:
+            return m.group(1)
+    return None
+
+
+def sync_cuenta_cotizacion_links(c: sqlite3.Connection) -> int:
+    """Rellena num_factura y enlaza cuentas <-> cotizaciones por Nº de factura."""
+    cuentas = c.execute(
+        """
+        SELECT id, documento, concepto, num_factura, cotizacion_id, cliente_id
+        FROM cuentas
+        """
+    ).fetchall()
+    for cu in cuentas:
+        num = (cu["num_factura"] or "").strip()
+        if not num:
+            num = extract_num_factura(cu["documento"], cu["concepto"]) or ""
+            if num:
+                c.execute(
+                    "UPDATE cuentas SET num_factura=?, facturado=1 WHERE id=?",
+                    (num, cu["id"]),
+                )
+
+    cuentas = c.execute(
+        """
+        SELECT id, documento, concepto, num_factura, cotizacion_id, cliente_id
+        FROM cuentas
+        """
+    ).fetchall()
+    cots = c.execute(
+        """
+        SELECT id, folio, asunto, titulo, proyecto, cxc_id, cliente_id
+        FROM cotizaciones
+        """
+    ).fetchall()
+
+    cot_by_fac: dict[tuple[int, str], sqlite3.Row] = {}
+    for cot in cots:
+        num = extract_num_factura(cot["asunto"], cot["titulo"], cot["proyecto"])
+        if not num or not cot["cliente_id"]:
+            continue
+        key = (int(cot["cliente_id"]), str(num))
+        # Si hay varias, preferir la ya enlazada a esta factura / la más antigua
+        if key not in cot_by_fac:
+            cot_by_fac[key] = cot
+
+    linked = 0
+    for cu in cuentas:
+        if not cu["cliente_id"]:
+            continue
+        num = (cu["num_factura"] or "").strip() or extract_num_factura(cu["documento"], cu["concepto"]) or ""
+        if not num:
+            continue
+        cot = cot_by_fac.get((int(cu["cliente_id"]), str(num)))
+        if not cot:
+            continue
+        if cu["cotizacion_id"] and int(cu["cotizacion_id"]) != int(cot["id"]):
+            continue
+        if cot["cxc_id"] and int(cot["cxc_id"]) != int(cu["id"]):
+            continue
+        c.execute(
+            """
+            UPDATE cuentas
+            SET cotizacion_id=?, num_factura=?, facturado=1
+            WHERE id=?
+            """,
+            (cot["id"], num, cu["id"]),
+        )
+        c.execute("UPDATE cotizaciones SET cxc_id=? WHERE id=?", (cu["id"], cot["id"]))
+        linked += 1
+    c.commit()
+    return linked
+
+
+def cuenta_doc_factura_display(cuenta) -> tuple[str, str]:
+    """Devuelve (documento visible, Nº factura). Documento = COT si está enlazada."""
+    keys = set(cuenta.keys()) if hasattr(cuenta, "keys") else set(cuenta)
+    folio = str(cuenta["cot_folio"]).strip() if "cot_folio" in keys and cuenta["cot_folio"] else ""
+    doc = str(cuenta["documento"] or "").strip() if "documento" in keys else ""
+    concepto = cuenta["concepto"] if "concepto" in keys else ""
+    num = ""
+    if "num_factura" in keys and cuenta["num_factura"]:
+        num = str(cuenta["num_factura"]).strip()
+    if not num:
+        num = extract_num_factura(doc, concepto) or ""
+    return (folio or doc or "-"), (num or "-")
 
 
 def fmt_clp_plain(v) -> str:
@@ -737,9 +854,9 @@ def estado_cuenta_pdf_bytes(cliente, cuentas, abonos, cots, deuda, empresa_row) 
         0,
         5,
         _pdf_txt(
-            f"RUT {cliente['rut'] if cliente and cliente['rut'] else '—'} · "
-            f"{cliente['telefono'] if cliente and cliente['telefono'] else '—'} · "
-            f"{cliente['email'] if cliente and cliente['email'] else '—'}"
+            f"RUT {cliente['rut'] if cliente and cliente['rut'] else '-'} | "
+            f"{cliente['telefono'] if cliente and cliente['telefono'] else '-'} | "
+            f"{cliente['email'] if cliente and cliente['email'] else '-'}"
         ),
         ln=1,
     )
@@ -756,7 +873,7 @@ def estado_cuenta_pdf_bytes(cliente, cuentas, abonos, cots, deuda, empresa_row) 
     pdf.ln(5)
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 7, _pdf_txt("Cuentas por cobrar"), ln=1)
-    widths = [32, 28, 28, 32, 32, 28]
+    widths = [34, 28, 28, 32, 32, 26]
     headers = ["Documento", "Factura", "Vence", "Total", "Saldo", "Estado"]
     pdf.set_fill_color(220, 220, 220)
     pdf.set_font("Helvetica", "B", 8)
@@ -768,8 +885,9 @@ def estado_cuenta_pdf_bytes(cliente, cuentas, abonos, cots, deuda, empresa_row) 
         pdf.cell(sum(widths), 6, _pdf_txt("Sin documentos"), border=1, ln=1)
     else:
         for x in cuentas:
-            pdf.cell(widths[0], 6, _pdf_txt(x["documento"]), border=1)
-            pdf.cell(widths[1], 6, _pdf_txt(x["num_factura"] if "num_factura" in x.keys() and x["num_factura"] else "—"), border=1)
+            doc_disp, fac_disp = cuenta_doc_factura_display(x)
+            pdf.cell(widths[0], 6, _pdf_txt(doc_disp), border=1)
+            pdf.cell(widths[1], 6, _pdf_txt(fac_disp), border=1, align="C")
             pdf.cell(widths[2], 6, _pdf_txt(fmt_dmy(x["fecha_vencimiento"] if "fecha_vencimiento" in x.keys() else None)), border=1)
             pdf.cell(widths[3], 6, _pdf_txt(f"$ {fmt_clp_plain(x['monto'])}"), border=1, align="R")
             pdf.cell(widths[4], 6, _pdf_txt(f"$ {fmt_clp_plain(x['saldo'])}"), border=1, align="R")

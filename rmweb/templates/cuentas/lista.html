@@ -55,8 +55,8 @@
         <tr>
           <td>{{ loop.index }}</td>
           <td><strong>{{ r.cliente or '—' }}</strong></td>
-          <td><span class="cot-num">{{ r.documento }}</span></td>
-          <td>{{ r.num_factura or '—' }}</td>
+          <td><span class="cot-num">{{ r.doc_display }}</span></td>
+          <td>{{ r.factura_display }}</td>
           <td>{{ fmt_dmy(r.fecha_emision) }}</td>
           <td>{{ fmt_dmy(r.fecha_vencimiento) }}</td>
           <td>{{ clp(r.monto) }}</td>

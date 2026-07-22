@@ -43,8 +43,8 @@
     <tbody>
       {% for x in cuentas %}
       <tr>
-        <td>{{ x.documento }}</td>
-        <td>{{ x.num_factura or '—' }}</td>
+        <td><span class="cot-num">{{ x.doc_display }}</span></td>
+        <td>{{ x.factura_display }}</td>
         <td>{{ fmt_dmy(x.fecha_vencimiento) }}</td>
         <td>{{ clp(x.monto) }}</td>
         <td>{{ clp(x.saldo) }}</td>

@@ -558,19 +558,31 @@ def cotizaciones_estado(cot_id: int):
 def cuentas_list():
     q = (request.args.get("q") or "").strip()
     db = core.conn()
+    core.sync_cuenta_cotizacion_links(db)
     sql = """
-        SELECT cu.*, cl.razon_social AS cliente
-        FROM cuentas cu LEFT JOIN clientes cl ON cl.id=cu.cliente_id
+        SELECT cu.*, cl.razon_social AS cliente, cot.folio AS cot_folio
+        FROM cuentas cu
+        LEFT JOIN clientes cl ON cl.id=cu.cliente_id
+        LEFT JOIN cotizaciones cot ON cot.id=cu.cotizacion_id
         WHERE 1=1
     """
     params: list = []
     if q:
         like = f"%{q}%"
-        sql += " AND (cl.razon_social LIKE ? OR cu.documento LIKE ? OR cu.num_factura LIKE ? OR cu.concepto LIKE ?)"
-        params.extend([like, like, like, like])
+        sql += """
+            AND (cl.razon_social LIKE ? OR cu.documento LIKE ? OR cu.num_factura LIKE ?
+                 OR cu.concepto LIKE ? OR cot.folio LIKE ?)
+        """
+        params.extend([like, like, like, like, like])
     sql += " ORDER BY cu.id DESC"
     rows = db.execute(sql, params).fetchall()
-    docs = [dict(r) for r in rows]
+    docs = []
+    for r in rows:
+        d = dict(r)
+        doc_disp, fac_disp = core.cuenta_doc_factura_display(d)
+        d["doc_display"] = doc_disp
+        d["factura_display"] = fac_disp
+        docs.append(d)
     total_docs = len(docs)
     total_monto = sum(float(d["monto"] or 0) for d in docs)
     pend = [d for d in docs if core.cxc_estado_class(d["estado"]) == "pendiente"]
@@ -601,28 +613,51 @@ def cuentas_list():
 
 
 def _load_vista360(db, cid: int | None):
+    core.sync_cuenta_cotizacion_links(db)
     cli = db.execute("SELECT * FROM clientes WHERE id=?", (cid,)).fetchone() if cid else None
     cuentas = []
     abonos = []
     cots = []
     deuda = 0.0
     if cid:
-        cuentas = db.execute(
-            "SELECT * FROM cuentas WHERE cliente_id=? ORDER BY id DESC", (cid,)
+        rows = db.execute(
+            """
+            SELECT cu.*, cot.folio AS cot_folio
+            FROM cuentas cu
+            LEFT JOIN cotizaciones cot ON cot.id = cu.cotizacion_id
+            WHERE cu.cliente_id=?
+            ORDER BY cu.id DESC
+            """,
+            (cid,),
         ).fetchall()
+        cuentas = []
+        for r in rows:
+            d = dict(r)
+            doc_disp, fac_disp = core.cuenta_doc_factura_display(d)
+            d["doc_display"] = doc_disp
+            d["factura_display"] = fac_disp
+            cuentas.append(d)
         deuda = sum(float(x["saldo"] or 0) for x in cuentas)
         abonos = db.execute(
             """
-            SELECT a.fecha, cu.documento, a.monto, a.medio, a.nota
-            FROM abonos a JOIN cuentas cu ON cu.id=a.cuenta_id
-            WHERE cu.cliente_id=? ORDER BY a.id DESC LIMIT 20
+            SELECT a.fecha,
+                   COALESCE(cot.folio, cu.documento) AS documento,
+                   a.monto, a.medio, a.nota
+            FROM abonos a
+            JOIN cuentas cu ON cu.id=a.cuenta_id
+            LEFT JOIN cotizaciones cot ON cot.id = cu.cotizacion_id
+            WHERE cu.cliente_id=?
+            ORDER BY a.id DESC LIMIT 20
             """,
             (cid,),
         ).fetchall()
         cots = db.execute(
             """
-            SELECT id, folio, fecha, estado, total, COALESCE(titulo, asunto, proyecto,'') AS titulo
-            FROM cotizaciones WHERE cliente_id=? ORDER BY COALESCE(fecha,'') DESC, id DESC
+            SELECT id, folio, fecha, estado, total,
+                   COALESCE(titulo, asunto, proyecto,'') AS titulo
+            FROM cotizaciones
+            WHERE cliente_id=?
+            ORDER BY COALESCE(fecha,'') DESC, id DESC
             """,
             (cid,),
         ).fetchall()
