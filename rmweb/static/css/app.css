@@ -32,6 +32,13 @@ body {
   top: 0;
   height: 100vh;
 }
+.brand-logo {
+  display: block;
+  width: 100%;
+  max-width: 168px;
+  height: auto;
+  margin: 0 0 .85rem;
+}
 .brand-kicker { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; opacity: .75; }
 .brand-title { font-size: 1.35rem; font-weight: 800; margin: .15rem 0; }
 .brand-sub { font-size: .75rem; opacity: .7; margin-bottom: 1rem; }
