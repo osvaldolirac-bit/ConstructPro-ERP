@@ -49,11 +49,24 @@ def _boot():
         g._db_ready = True
 
 
+def _safe_next_redirect(nxt: str | None):
+    """Evita salir de /riomaipo (p.ej. next=/ cae en nginx → /laconcepcion/)."""
+    nxt = (nxt or "").strip()
+    if not nxt or nxt == "/" or not nxt.startswith("/") or nxt.startswith("//") or "://" in nxt:
+        return redirect(url_for("dashboard"))
+    # request.path viene sin SCRIPT_NAME; hay que anteponer el prefijo público
+    prefix = (request.script_root or "").rstrip("/")
+    return redirect(prefix + nxt)
+
+
 def login_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not session.get("auth_ok"):
-            return redirect(url_for("login", next=request.path))
+            path = request.path or "/"
+            if path in ("/", ""):
+                return redirect(url_for("login"))
+            return redirect(url_for("login", next=path))
         return fn(*args, **kwargs)
 
     return wrapper
@@ -93,9 +106,14 @@ def login():
             session["auth_user"] = user["usuario"]
             session["auth_nombre"] = user["nombre"] or user["usuario"]
             session["auth_tipo"] = user["tipo"] or "Consulta"
-            return redirect(request.args.get("next") or url_for("dashboard"))
+            return _safe_next_redirect(request.args.get("next"))
         error = "Usuario o clave incorrectos"
     return render_template("login.html", error=error, default_user=core.DEFAULT_ACCESO)
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return app.send_static_file("favicon.svg")
 
 
 @app.route("/logout")
