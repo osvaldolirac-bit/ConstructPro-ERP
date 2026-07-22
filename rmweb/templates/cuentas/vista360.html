@@ -48,7 +48,7 @@
         <td>{{ fmt_dmy(x.fecha_vencimiento) }}</td>
         <td>{{ clp(x.monto) }}</td>
         <td>{{ clp(x.saldo) }}</td>
-        <td>{{ cxc_estado_label(x.estado) }}</td>
+        <td><span class="estado {{ cxc_estado_class(x.estado) }}">{{ cxc_estado_label(x.estado) }}</span></td>
         <td class="actions-cell">
           <a class="btn-act pdf" href="{{ url_for('cuentas_pdf', cuenta_id=x.id) }}" title="PDF"><i class="bi bi-file-earmark-pdf"></i></a>
         </td>
