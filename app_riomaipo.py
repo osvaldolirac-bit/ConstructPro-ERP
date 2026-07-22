@@ -2303,6 +2303,28 @@ elif modulo == "Cotizaciones":
         st.session_state.cot_pdf_id = None
         st.session_state.cot_delete_id = None
 
+    def _cot_reset_new_form():
+        """Limpia estado pegado del formulario Nueva cotización (título, ítems, etc.)."""
+        prev_nonce = int(st.session_state.get("cot_new_form_nonce", 0) or 0)
+        prefixes = (
+            "desc_new_",
+            "obs_new_",
+            "un_new_",
+            "cant_new_",
+            "pu_new_",
+            "itemcode_new_",
+            "cot_new_",
+            "FormSubmitter:f_cot_new",
+        )
+        for k in list(st.session_state.keys()):
+            if k.startswith(prefixes) or k in (
+                "cot_titulo_src_cliente",
+                "cot_titulo_auto",
+                "cot_new_form_nonce",
+            ):
+                del st.session_state[k]
+        st.session_state.cot_new_form_nonce = prev_nonce + 1
+
     clientes = db.execute(
         "SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social"
     ).fetchall()
@@ -2450,6 +2472,7 @@ elif modulo == "Cotizaciones":
             if st.button("+ Nueva", type="primary", use_container_width=True, key="cot_crear"):
                 st.session_state.cot_mode = "new"
                 st.session_state.cot_focus_id = None
+                _cot_reset_new_form()
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -2712,39 +2735,91 @@ elif modulo == "Cotizaciones":
             cli_default = 0
             if edit_cot and edit_cot["cliente_id"] in cli_ids:
                 cli_default = cli_ids.index(edit_cot["cliente_id"])
-            with st.form("f_cot"):
-                st.caption("Formato Río Maipo: ítems + OBS + GG + Utilidad + IVA (como cotización Agrocastilla).")
-                h1, h2, h3 = st.columns([0.7, 2.2, 1.4])
-                with h1:
+
+            # Cliente fuera del form en "new" para que al cambiar se refresque el título
+            if mode == "new":
+                if "cot_new_form_nonce" not in st.session_state:
+                    st.session_state.cot_new_form_nonce = 1
+                cliente_id = st.selectbox(
+                    "Cliente",
+                    options=cli_ids,
+                    index=0,
+                    format_func=lambda i: next(x["razon_social"] for x in clientes if x["id"] == i),
+                    key="cot_new_cliente",
+                )
+                cli_nombre = next(
+                    (x["razon_social"] for x in clientes if x["id"] == cliente_id),
+                    "",
+                )
+                tit_key = f"cot_new_titulo_{cliente_id}_{st.session_state.cot_new_form_nonce}"
+                # Si cambió el cliente, regenerar título sugerido
+                if st.session_state.get("cot_titulo_src_cliente") != cliente_id:
+                    st.session_state.cot_titulo_auto = (cli_nombre or "").strip().upper()
+                    st.session_state.cot_titulo_src_cliente = cliente_id
+                    st.session_state[tit_key] = st.session_state.cot_titulo_auto
+                elif tit_key not in st.session_state:
+                    st.session_state[tit_key] = st.session_state.get(
+                        "cot_titulo_auto",
+                        (cli_nombre or "").strip().upper(),
+                    )
+                titulo = st.text_input(
+                    "Título cotización (barra PDF)",
+                    key=tit_key,
+                    help="Se actualiza al cambiar de cliente; puedes editarlo después.",
+                    placeholder="NOMBRE CLIENTE U OBRA",
+                )
+                st.caption("Formato Río Maipo: ítems + OBS + GG + Utilidad + IVA.")
+            else:
+                cliente_id = None
+                titulo = None
+
+            form_key = f"f_cot_{mode}" + (
+                f"_{st.session_state.get('cot_new_form_nonce', 1)}_{cliente_id}" if mode == "new" else ""
+            )
+            with st.form(form_key):
+                if mode == "edit":
+                    st.caption("Formato Río Maipo: ítems + OBS + GG + Utilidad + IVA.")
+                    h1, h2, h3 = st.columns([0.7, 2.2, 1.4])
+                    with h1:
+                        version = st.text_input(
+                            "Versión",
+                            value=(edit_cot["version"] or "1") if edit_cot else "1",
+                            help="Aparece como V1, V2… en el PDF",
+                        )
+                    with h2:
+                        titulo = st.text_input(
+                            "Título cotización (barra PDF)",
+                            value=(edit_cot["titulo"] or "") if edit_cot else "",
+                            placeholder="NOMBRE CLIENTE U OBRA",
+                        )
+                    with h3:
+                        cliente_id = st.selectbox(
+                            "Cliente",
+                            options=cli_ids,
+                            index=cli_default,
+                            format_func=lambda i: next(x["razon_social"] for x in clientes if x["id"] == i),
+                        )
+                else:
                     version = st.text_input(
                         "Versión",
-                        value=(edit_cot["version"] or "1") if edit_cot else "1",
+                        value="1",
                         help="Aparece como V1, V2… en el PDF",
+                        key=f"cot_new_version_{st.session_state.cot_new_form_nonce}",
                     )
-                with h2:
-                    titulo = st.text_input(
-                        "Título cotización (barra PDF)",
-                        value=(edit_cot["titulo"] or "") if edit_cot else "",
-                        placeholder="AGROCASTILLA BODEGA ENOLOGIA SOMBREADERO",
-                    )
-                with h3:
-                    cliente_id = st.selectbox(
-                        "Cliente",
-                        options=cli_ids,
-                        index=cli_default,
-                        format_func=lambda i: next(x["razon_social"] for x in clientes if x["id"] == i),
-                    )
+
                 p1, p2, p3, p4 = st.columns(4)
                 with p1:
                     proyecto = st.text_input(
                         "Proyecto / obra",
                         value=(edit_cot["proyecto"] or "") if edit_cot else "",
-                        placeholder="Pirque · Sombreador",
+                        placeholder="Obra / sector",
+                        key=f"cot_{mode}_proyecto_{st.session_state.get('cot_new_form_nonce', 0) if mode == 'new' else edit_cot['id']}",
                     )
                 with p2:
                     asunto = st.text_input(
                         "Asunto / nombre interno",
                         value=(edit_cot["asunto"] or "") if edit_cot else "",
+                        key=f"cot_{mode}_asunto_{st.session_state.get('cot_new_form_nonce', 0) if mode == 'new' else edit_cot['id']}",
                     )
                 with p3:
                     validez = st.number_input(
@@ -2784,6 +2859,11 @@ elif modulo == "Cotizaciones":
                 for col, label in zip(head, ["Item", "Especificación", "Obs", "Und", "Cant", "Valor"]):
                     col.caption(label)
 
+                item_ns = (
+                    f"new_{st.session_state.get('cot_new_form_nonce', 1)}_{cliente_id}"
+                    if mode == "new"
+                    else f"edit_{edit_cot['id']}"
+                )
                 items = []
                 for i in range(COT_ITEM_SLOTS):
                     base = edit_items[i] if i < len(edit_items) else None
@@ -2794,12 +2874,12 @@ elif modulo == "Cotizaciones":
                             value=f"1.{i+1}",
                             disabled=True,
                             label_visibility="collapsed",
-                            key=f"itemcode_{mode}_{i}",
+                            key=f"itemcode_{item_ns}_{i}",
                         )
                     with cols[1]:
                         desc = st.text_input(
                             "Especificación",
-                            key=f"desc_{mode}_{i}",
+                            key=f"desc_{item_ns}_{i}",
                             value=(base["descripcion"] if base else ""),
                             label_visibility="collapsed",
                             placeholder="excavaciones",
@@ -2807,7 +2887,7 @@ elif modulo == "Cotizaciones":
                     with cols[2]:
                         obs = st.text_input(
                             "Obs",
-                            key=f"obs_{mode}_{i}",
+                            key=f"obs_{item_ns}_{i}",
                             value=(base["obs"] if base else ""),
                             label_visibility="collapsed",
                             placeholder="100x100x180",
@@ -2816,7 +2896,7 @@ elif modulo == "Cotizaciones":
                         un = st.text_input(
                             "Und",
                             value=(base["unidad"] if base else "un"),
-                            key=f"un_{mode}_{i}",
+                            key=f"un_{item_ns}_{i}",
                             label_visibility="collapsed",
                         )
                     with cols[4]:
@@ -2824,7 +2904,7 @@ elif modulo == "Cotizaciones":
                             "Cant",
                             min_value=0.0,
                             value=float(base["cantidad"]) if base else 0.0,
-                            key=f"cant_{mode}_{i}",
+                            key=f"cant_{item_ns}_{i}",
                             label_visibility="collapsed",
                             step=1.0,
                         )
@@ -2833,7 +2913,7 @@ elif modulo == "Cotizaciones":
                             "Valor",
                             min_value=0.0,
                             value=float(base["precio_unitario"]) if base else 0.0,
-                            key=f"pu_{mode}_{i}",
+                            key=f"pu_{item_ns}_{i}",
                             label_visibility="collapsed",
                             step=1000.0,
                         )
@@ -2842,6 +2922,7 @@ elif modulo == "Cotizaciones":
                 notas = st.text_area(
                     "Notas internas",
                     value=(edit_cot["notas"] or "") if edit_cot else "",
+                    key=f"cot_{mode}_notas_{item_ns}",
                 )
                 guardar = st.form_submit_button(
                     "Guardar cambios" if mode == "edit" else "Guardar cotización",
