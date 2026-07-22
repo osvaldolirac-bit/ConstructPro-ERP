@@ -412,3 +412,79 @@ body {
   padding-top: .25rem;
 }
 .pay-actions .btn { min-width: 150px; }
+
+/* Totales cotización */
+.cot-totals {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .cot-totals { grid-template-columns: 1fr; }
+}
+.cot-totals-box {
+  background: #f4f7fb;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: .85rem 1rem;
+}
+.cot-tot-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .5rem .75rem;
+  align-items: center;
+  padding: .42rem 0;
+  border-bottom: 1px solid #e2e9f2;
+  font-size: .92rem;
+}
+.cot-tot-row:last-child { border-bottom: 0; }
+.cot-tot-row > span,
+.cot-tot-row > label {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+.cot-tot-row > strong {
+  text-align: right;
+  color: var(--brand);
+  font-weight: 800;
+  min-width: 6.5rem;
+}
+.cot-tot-edit {
+  grid-template-columns: 1fr auto auto;
+}
+.cot-tot-pct {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+.cot-tot-pct .form-control {
+  width: 4.5rem;
+  text-align: right;
+  font-weight: 700;
+}
+.cot-tot-pct span {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: .85rem;
+}
+.cot-tot-neto {
+  margin-top: .15rem;
+  padding-top: .55rem;
+  border-top: 1px dashed #cfd9e6;
+}
+.cot-tot-neto strong,
+.cot-tot-final strong {
+  font-size: 1.05rem;
+}
+.cot-tot-final {
+  margin-top: .1rem;
+  padding-top: .65rem;
+  border-top: 1px solid #cfd9e6;
+}
+.cot-tot-final span,
+.cot-tot-final strong {
+  color: var(--brand);
+  font-size: 1.08rem;
+}

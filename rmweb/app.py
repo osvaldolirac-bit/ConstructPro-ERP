@@ -316,7 +316,8 @@ def cotizaciones_form(cot_id: int | None = None):
             if not core._is_gg_line(it["descripcion"]) and not core._is_util_line(it["descripcion"])
         ]
 
-    iva_pct = core.param(db, "iva", 19) / 100
+    iva_def = core.param(db, "iva", 19)
+    iva_pct = float(iva_def) / 100.0
     gg_def = core.param(db, "gg_pct", 5)
     util_def = core.param(db, "utilidad_pct", 15)
     validez_def = int(core.param(db, "validez_cotizacion", 30))
@@ -331,6 +332,11 @@ def cotizaciones_form(cot_id: int | None = None):
         validez = int(request.form.get("validez") or validez_def)
         gg_pct = float(request.form.get("gg_pct") or gg_def)
         utilidad_pct = float(request.form.get("utilidad_pct") or util_def)
+        # Permite ajustar IVA por cotización; si no viene, usa parámetro
+        try:
+            iva_pct = float(request.form.get("iva_pct") or iva_def) / 100.0
+        except (TypeError, ValueError):
+            iva_pct = float(iva_def) / 100.0
         notas = (request.form.get("notas") or "").strip() or None
 
         descs = request.form.getlist("desc")
@@ -448,8 +454,9 @@ def cotizaciones_form(cot_id: int | None = None):
         titulo_default=titulo_default,
         gg_def=gg_def,
         util_def=util_def,
+        iva_def=iva_def,
         validez_def=validez_def,
-        slots=12,
+        slots=16,
     )
 
 
