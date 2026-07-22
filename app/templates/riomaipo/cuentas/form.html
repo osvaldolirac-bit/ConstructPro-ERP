@@ -1,0 +1,55 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Nuevo documento CxC{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Nuevo documento</h1>
+    <p>Registra un estado de pago. Retención por defecto: {{ retencion_pct|int }}%.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{{ prefix }}/cuentas-por-cobrar">Volver</a>
+  </div>
+</div>
+
+<section class="panel">
+  <form method="post" action="{{ prefix }}/cuentas-por-cobrar/nueva">
+    <div class="form-grid">
+      <label>
+        Cliente
+        <select name="cliente_id" required>
+          <option value="">Seleccionar…</option>
+          {% for c in clientes %}
+          <option value="{{ c.id }}">{{ c.razon_social }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Monto facturado
+        <input type="number" name="monto" min="1" step="1" required placeholder="15000000">
+      </label>
+      <label class="full">
+        Obra
+        <input name="obra" required placeholder="Condominio Río Maipo">
+      </label>
+      <label class="full">
+        Concepto
+        <input name="concepto" placeholder="Estado de pago N°2">
+      </label>
+      <label>
+        Aplicar retención
+        <select name="aplicar_retencion">
+          <option value="si">Sí ({{ retencion_pct|int }}%)</option>
+          <option value="no">No</option>
+        </select>
+      </label>
+      <label>
+        Días a vencimiento
+        <input type="number" name="dias_vencimiento" value="30" min="1">
+      </label>
+    </div>
+    <div class="actions" style="margin-top:1rem">
+      <button class="btn btn-primary" type="submit">Guardar documento</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

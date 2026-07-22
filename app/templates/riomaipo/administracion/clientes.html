@@ -1,0 +1,66 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}Clientes{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Clientes</h1>
+    <p>Maestro de clientes del carril {{ track_name }}.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{{ prefix }}/administracion">Volver</a>
+  </div>
+</div>
+
+<section class="panel">
+  <h2>Nuevo cliente</h2>
+  <form method="post" action="{{ prefix }}/administracion/clientes">
+    <div class="form-grid">
+      <label>RUT<input name="rut" required placeholder="76.123.456-7"></label>
+      <label>Razón social<input name="razon_social" required></label>
+      <label>Giro<input name="giro"></label>
+      <label>Contacto<input name="contacto"></label>
+      <label>Email<input name="email" type="email"></label>
+      <label>Teléfono<input name="telefono"></label>
+      <label class="full">Dirección<input name="direccion"></label>
+    </div>
+    <div class="actions" style="margin-top:0.9rem">
+      <button class="btn btn-primary" type="submit">Crear cliente</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Listado</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>RUT</th><th>Razón social</th><th>Contacto</th><th>Email</th><th>Estado</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for c in clientes %}
+        <tr>
+          <td>{{ c.rut }}</td>
+          <td><b>{{ c.razon_social }}</b></td>
+          <td>{{ c.contacto or "—" }}</td>
+          <td>{{ c.email or "—" }}</td>
+          <td>
+            <span class="badge {% if c.activo %}ok{% else %}error{% endif %}">
+              {{ "activo" if c.activo else "inactivo" }}
+            </span>
+          </td>
+          <td>
+            <form method="post" action="{{ prefix }}/administracion/clientes/{{ c.id }}/toggle">
+              <button class="btn btn-ghost" type="submit">
+                {{ "Desactivar" if c.activo else "Activar" }}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">Sin clientes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

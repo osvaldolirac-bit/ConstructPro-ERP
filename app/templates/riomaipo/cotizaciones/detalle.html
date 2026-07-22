@@ -1,0 +1,56 @@
+{% extends "riomaipo/base.html" %}
+{% block title %}{{ cotizacion.folio }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>{{ cotizacion.folio }}</h1>
+    <p>{{ cotizacion.obra }} · {{ cotizacion.cliente.razon_social if cotizacion.cliente else "Sin cliente" }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{{ prefix }}/cotizaciones">Volver</a>
+  </div>
+</div>
+
+<section class="metrics">
+  <article class="metric"><span>Fecha</span><strong>{{ fecha_corta(cotizacion.fecha) }}</strong></article>
+  <article class="metric"><span>Estado</span><strong>{{ cotizacion.estado }}</strong></article>
+  <article class="metric"><span>Subtotal</span><strong class="mono">{{ clp(cotizacion.subtotal) }}</strong></article>
+  <article class="metric"><span>Total</span><strong class="mono">{{ clp(cotizacion.total) }}</strong></article>
+</section>
+
+<section class="panel">
+  <h2>Partidas</h2>
+  {% if cotizacion.descripcion %}<p class="muted">{{ cotizacion.descripcion }}</p>{% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Partida</th><th>Unidad</th><th>Cantidad</th><th>P. unitario</th><th>Total</th></tr>
+      </thead>
+      <tbody>
+        {% for i in cotizacion.items %}
+        <tr>
+          <td>{{ i.partida }}</td>
+          <td>{{ i.unidad }}</td>
+          <td class="mono">{{ i.cantidad }}</td>
+          <td class="mono">{{ clp(i.precio_unitario) }}</td>
+          <td class="mono">{{ clp(i.total) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:0.8rem">IVA: <b class="mono">{{ clp(cotizacion.iva) }}</b></p>
+</section>
+
+<section class="panel">
+  <h3>Cambiar estado</h3>
+  <form method="post" action="{{ prefix }}/cotizaciones/{{ cotizacion.id }}/estado" class="inline-form">
+    <select name="estado">
+      {% for e in ['borrador','enviada','aprobada','rechazada'] %}
+      <option value="{{ e }}" {% if cotizacion.estado == e %}selected{% endif %}>{{ e }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-secondary" type="submit">Actualizar</button>
+  </form>
+</section>
+{% endblock %}

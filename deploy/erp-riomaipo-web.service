@@ -1,0 +1,17 @@
+[Unit]
+Description=ERP Master - Rio Maipo Web (Flask/Gunicorn :8505)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/riomaipo
+Environment=RIOMAIPO_DB=/root/riomaipo/data/riomaipo_erp.db
+Environment=SECRET_KEY=riomaipo-prod-change-me
+Environment=PYTHONPATH=/root/riomaipo
+ExecStart=/root/riomaipo/.venv/bin/gunicorn -b 127.0.0.1:8505 -w 2 --timeout 120 rmweb.wsgi:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
