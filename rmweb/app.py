@@ -579,16 +579,7 @@ def cuentas_list():
     )
 
 
-@app.route("/cuentas/360")
-@login_required
-def cuentas_360():
-    db = core.conn()
-    clientes = db.execute(
-        "SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social"
-    ).fetchall()
-    cid = request.args.get("cliente_id", type=int)
-    if not cid and clientes:
-        cid = clientes[0]["id"]
+def _load_vista360(db, cid: int | None):
     cli = db.execute("SELECT * FROM clientes WHERE id=?", (cid,)).fetchone() if cid else None
     cuentas = []
     abonos = []
@@ -609,11 +600,25 @@ def cuentas_360():
         ).fetchall()
         cots = db.execute(
             """
-            SELECT folio, fecha, estado, total, COALESCE(titulo, asunto, proyecto,'') AS titulo
+            SELECT id, folio, fecha, estado, total, COALESCE(titulo, asunto, proyecto,'') AS titulo
             FROM cotizaciones WHERE cliente_id=? ORDER BY COALESCE(fecha,'') DESC, id DESC
             """,
             (cid,),
         ).fetchall()
+    return cli, cuentas, abonos, cots, deuda
+
+
+@app.route("/cuentas/360")
+@login_required
+def cuentas_360():
+    db = core.conn()
+    clientes = db.execute(
+        "SELECT id, razon_social FROM clientes WHERE activo=1 ORDER BY razon_social"
+    ).fetchall()
+    cid = request.args.get("cliente_id", type=int)
+    if not cid and clientes:
+        cid = clientes[0]["id"]
+    cli, cuentas, abonos, cots, deuda = _load_vista360(db, cid)
     db.close()
     return render_template(
         "cuentas/vista360.html",
@@ -625,6 +630,31 @@ def cuentas_360():
         abonos=abonos,
         cots=cots,
         deuda=deuda,
+    )
+
+
+@app.route("/cuentas/360/pdf")
+@login_required
+def cuentas_360_pdf():
+    cid = request.args.get("cliente_id", type=int)
+    db = core.conn()
+    if not cid:
+        flash("Selecciona un cliente", "danger")
+        db.close()
+        return redirect(url_for("cuentas_360"))
+    cli, cuentas, abonos, cots, deuda = _load_vista360(db, cid)
+    empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
+    db.close()
+    if not cli:
+        flash("Cliente no encontrado", "danger")
+        return redirect(url_for("cuentas_360"))
+    pdf = core.estado_cuenta_pdf_bytes(cli, cuentas, abonos, cots, deuda, empresa)
+    safe = "".join(ch if ch.isalnum() else "_" for ch in (cli["razon_social"] or "cliente"))[:40]
+    return send_file(
+        BytesIO(pdf),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"estado_cuenta_{safe}.pdf",
     )
 
 
@@ -709,7 +739,7 @@ def cuentas_detalle(cuenta_id: int):
     db = core.conn()
     cuenta = db.execute(
         """
-        SELECT cu.*, cl.razon_social FROM cuentas cu
+        SELECT cu.*, cl.razon_social, cl.rut AS cliente_rut FROM cuentas cu
         LEFT JOIN clientes cl ON cl.id=cu.cliente_id WHERE cu.id=?
         """,
         (cuenta_id,),
@@ -727,6 +757,39 @@ def cuentas_detalle(cuenta_id: int):
         active="cuentas",
         cuenta=cuenta,
         abonos=abonos,
+    )
+
+
+@app.route("/cuentas/<int:cuenta_id>/pdf")
+@login_required
+def cuentas_pdf(cuenta_id: int):
+    db = core.conn()
+    cuenta = db.execute(
+        """
+        SELECT cu.*, cl.razon_social, cl.rut AS cliente_rut,
+               COALESCE(cu.tipo_doc, '') AS tipo
+        FROM cuentas cu
+        LEFT JOIN clientes cl ON cl.id=cu.cliente_id
+        WHERE cu.id=?
+        """,
+        (cuenta_id,),
+    ).fetchone()
+    if not cuenta:
+        db.close()
+        flash("Documento no encontrado", "danger")
+        return redirect(url_for("cuentas_list"))
+    abonos = db.execute(
+        "SELECT fecha, monto, medio, nota FROM abonos WHERE cuenta_id=? ORDER BY id",
+        (cuenta_id,),
+    ).fetchall()
+    empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
+    db.close()
+    pdf = core.cuenta_pdf_bytes(cuenta, abonos, empresa)
+    return send_file(
+        BytesIO(pdf),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"{cuenta['documento']}.pdf",
     )
 
 

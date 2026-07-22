@@ -409,3 +409,208 @@ def cotizacion_pdf_bytes(cot, items, empresa_row) -> bytes:
 
     raw = pdf.output(dest="S")
     return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
+
+
+def _pdf_header_portrait(pdf, empresa_row, subtitle: str) -> None:
+    logo = LOGO_RIOMAIPO if LOGO_RIOMAIPO.exists() else LOGO_ERP
+    if logo.exists():
+        pdf.image(str(logo), x=12, y=8, w=28)
+    pdf.set_xy(45, 10)
+    pdf.set_font("Helvetica", "B", 13)
+    razon = ""
+    if empresa_row and "razon_social" in empresa_row.keys() and empresa_row["razon_social"]:
+        razon = empresa_row["razon_social"]
+    pdf.cell(0, 6, _pdf_txt(razon or "RIO MAIPO Constructora"), ln=1)
+    pdf.set_x(45)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(80, 80, 80)
+    bits = []
+    if empresa_row:
+        if empresa_row["rut"]:
+            bits.append(f"RUT {empresa_row['rut']}")
+        if empresa_row["telefono"]:
+            bits.append(str(empresa_row["telefono"]))
+        if empresa_row["email"]:
+            bits.append(str(empresa_row["email"]))
+    pdf.cell(0, 5, _pdf_txt(" · ".join(bits)), ln=1)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_y(28)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, _pdf_txt(subtitle), ln=1)
+    pdf.ln(2)
+
+
+def cuenta_pdf_bytes(cuenta, abonos, empresa_row) -> bytes:
+    """PDF vertical de un documento CxC con historial de abonos."""
+    if FPDF is None:
+        raise RuntimeError("FPDF no está instalado")
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    doc = cuenta["documento"] if "documento" in cuenta.keys() else "CxC"
+    _pdf_header_portrait(pdf, empresa_row, f"Documento {doc}")
+
+    pdf.set_font("Helvetica", "", 10)
+    lines = [
+        ("Cliente", cuenta["razon_social"] if "razon_social" in cuenta.keys() else "—"),
+        ("RUT cliente", cuenta["cliente_rut"] if "cliente_rut" in cuenta.keys() else "—"),
+        (
+            "Tipo",
+            cuenta["tipo"]
+            if "tipo" in cuenta.keys() and cuenta["tipo"]
+            else (cuenta["tipo_doc"] if "tipo_doc" in cuenta.keys() else "—"),
+        ),
+        ("Nº Factura", cuenta["num_factura"] if "num_factura" in cuenta.keys() and cuenta["num_factura"] else "—"),
+        ("Emisión", fmt_dmy(cuenta["fecha_emision"] if "fecha_emision" in cuenta.keys() else None)),
+        ("Vencimiento", fmt_dmy(cuenta["fecha_vencimiento"] if "fecha_vencimiento" in cuenta.keys() else None)),
+        ("Estado", cxc_estado_label(cuenta["estado"] if "estado" in cuenta.keys() else None)),
+        ("Concepto", cuenta["concepto"] if "concepto" in cuenta.keys() and cuenta["concepto"] else "—"),
+    ]
+    for lab, val in lines:
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(40, 6, _pdf_txt(lab), border=0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 6, _pdf_txt(val), border=0)
+
+    pdf.ln(3)
+    pdf.set_fill_color(238, 243, 249)
+    pdf.set_font("Helvetica", "B", 9)
+    for lab, val in [
+        ("Total", f"$ {fmt_clp_plain(cuenta['monto'] if 'monto' in cuenta.keys() else 0)}"),
+        ("Abonos", f"$ {fmt_clp_plain(cuenta['abonado'] if 'abonado' in cuenta.keys() else 0)}"),
+        ("Saldo", f"$ {fmt_clp_plain(cuenta['saldo'] if 'saldo' in cuenta.keys() else 0)}"),
+    ]:
+        pdf.cell(40, 7, _pdf_txt(lab), border=1, fill=True)
+        pdf.cell(50, 7, _pdf_txt(val), border=1, align="R", ln=1)
+
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _pdf_txt("Abonos registrados"), ln=1)
+    headers = ["Fecha", "Monto", "Medio", "Nota"]
+    widths = [28, 35, 35, 92]
+    pdf.set_fill_color(220, 220, 220)
+    pdf.set_font("Helvetica", "B", 8)
+    for h, w in zip(headers, widths):
+        pdf.cell(w, 6, h, border=1, align="C", fill=True)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 8)
+    if not abonos:
+        pdf.cell(sum(widths), 6, _pdf_txt("Sin abonos"), border=1, ln=1)
+    else:
+        for a in abonos:
+            pdf.cell(widths[0], 6, _pdf_txt(fmt_dmy(a["fecha"])), border=1)
+            pdf.cell(widths[1], 6, _pdf_txt(f"$ {fmt_clp_plain(a['monto'])}"), border=1, align="R")
+            pdf.cell(widths[2], 6, _pdf_txt(a["medio"] if "medio" in a.keys() else ""), border=1)
+            nota = a["nota"] if "nota" in a.keys() else ""
+            pdf.cell(widths[3], 6, _pdf_txt(nota)[:48], border=1, ln=1)
+
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, _pdf_txt(f"Generado {date.today().strftime('%d/%m/%Y')} · ERP Master · Río Maipo"), ln=1)
+    raw = pdf.output(dest="S")
+    return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
+
+
+def estado_cuenta_pdf_bytes(cliente, cuentas, abonos, cots, deuda, empresa_row) -> bytes:
+    """PDF Vista 360 / estado de cuenta del cliente."""
+    if FPDF is None:
+        raise RuntimeError("FPDF no está instalado")
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    nombre = cliente["razon_social"] if cliente else "Cliente"
+    _pdf_header_portrait(pdf, empresa_row, "Estado de cuenta")
+
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 6, _pdf_txt(nombre), ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(80, 80, 80)
+    pdf.cell(
+        0,
+        5,
+        _pdf_txt(
+            f"RUT {cliente['rut'] if cliente and cliente['rut'] else '—'} · "
+            f"{cliente['telefono'] if cliente and cliente['telefono'] else '—'} · "
+            f"{cliente['email'] if cliente and cliente['email'] else '—'}"
+        ),
+        ln=1,
+    )
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 10)
+    if float(deuda or 0) > 0:
+        pdf.set_fill_color(255, 235, 235)
+    else:
+        pdf.set_fill_color(230, 245, 235)
+    pdf.cell(60, 8, _pdf_txt("Deuda abierta"), border=1, fill=True)
+    pdf.cell(50, 8, _pdf_txt(f"$ {fmt_clp_plain(deuda)}"), border=1, align="R", fill=True, ln=1)
+
+    pdf.ln(5)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _pdf_txt("Cuentas por cobrar"), ln=1)
+    widths = [32, 28, 28, 32, 32, 28]
+    headers = ["Documento", "Factura", "Vence", "Total", "Saldo", "Estado"]
+    pdf.set_fill_color(220, 220, 220)
+    pdf.set_font("Helvetica", "B", 8)
+    for h, w in zip(headers, widths):
+        pdf.cell(w, 6, h, border=1, align="C", fill=True)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 8)
+    if not cuentas:
+        pdf.cell(sum(widths), 6, _pdf_txt("Sin documentos"), border=1, ln=1)
+    else:
+        for x in cuentas:
+            pdf.cell(widths[0], 6, _pdf_txt(x["documento"]), border=1)
+            pdf.cell(widths[1], 6, _pdf_txt(x["num_factura"] if "num_factura" in x.keys() and x["num_factura"] else "—"), border=1)
+            pdf.cell(widths[2], 6, _pdf_txt(fmt_dmy(x["fecha_vencimiento"] if "fecha_vencimiento" in x.keys() else None)), border=1)
+            pdf.cell(widths[3], 6, _pdf_txt(f"$ {fmt_clp_plain(x['monto'])}"), border=1, align="R")
+            pdf.cell(widths[4], 6, _pdf_txt(f"$ {fmt_clp_plain(x['saldo'])}"), border=1, align="R")
+            pdf.cell(widths[5], 6, _pdf_txt(cxc_estado_label(x["estado"])), border=1, ln=1)
+
+    pdf.ln(5)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _pdf_txt("Últimos abonos"), ln=1)
+    aw = [28, 40, 35, 77]
+    pdf.set_fill_color(220, 220, 220)
+    pdf.set_font("Helvetica", "B", 8)
+    for h, w in zip(["Fecha", "Documento", "Monto", "Medio"], aw):
+        pdf.cell(w, 6, h, border=1, align="C", fill=True)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 8)
+    if not abonos:
+        pdf.cell(sum(aw), 6, _pdf_txt("Sin abonos"), border=1, ln=1)
+    else:
+        for a in abonos:
+            pdf.cell(aw[0], 6, _pdf_txt(fmt_dmy(a["fecha"])), border=1)
+            pdf.cell(aw[1], 6, _pdf_txt(a["documento"] if "documento" in a.keys() else ""), border=1)
+            pdf.cell(aw[2], 6, _pdf_txt(f"$ {fmt_clp_plain(a['monto'])}"), border=1, align="R")
+            pdf.cell(aw[3], 6, _pdf_txt(a["medio"] if "medio" in a.keys() else ""), border=1, ln=1)
+
+    pdf.ln(5)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _pdf_txt("Cotizaciones"), ln=1)
+    cw = [30, 28, 70, 28, 24]
+    pdf.set_fill_color(220, 220, 220)
+    pdf.set_font("Helvetica", "B", 8)
+    for h, w in zip(["Folio", "Fecha", "Título", "Estado", "Total"], cw):
+        pdf.cell(w, 6, h, border=1, align="C", fill=True)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 8)
+    if not cots:
+        pdf.cell(sum(cw), 6, _pdf_txt("Sin cotizaciones"), border=1, ln=1)
+    else:
+        for c in cots:
+            pdf.cell(cw[0], 6, _pdf_txt(c["folio"]), border=1)
+            pdf.cell(cw[1], 6, _pdf_txt(fmt_dmy(c["fecha"] if "fecha" in c.keys() else None)), border=1)
+            titulo = c["titulo"] if "titulo" in c.keys() else ""
+            pdf.cell(cw[2], 6, _pdf_txt(titulo)[:40], border=1)
+            pdf.cell(cw[3], 6, _pdf_txt(estado_label_cot(c["estado"] if "estado" in c.keys() else None)), border=1)
+            pdf.cell(cw[4], 6, _pdf_txt(f"$ {fmt_clp_plain(c['total'] if 'total' in c.keys() else 0)}"), border=1, align="R", ln=1)
+
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, _pdf_txt(f"Generado {date.today().strftime('%d/%m/%Y')} · ERP Master · Río Maipo"), ln=1)
+    raw = pdf.output(dest="S")
+    return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)

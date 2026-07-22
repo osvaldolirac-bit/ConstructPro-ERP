@@ -6,7 +6,12 @@
     <h1>{% if edit %}Modificar {{ edit.documento }}{% else %}Nuevo documento{% endif %}</h1>
     <p>Incluye opción de número de factura cuando esté facturado.</p>
   </div>
-  <a class="btn btn-outline-secondary" href="{{ url_for('cuentas_list') }}">Volver</a>
+  <div class="d-flex gap-2">
+    {% if edit %}
+    <a class="btn btn-info text-white" href="{{ url_for('cuentas_pdf', cuenta_id=edit.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+    {% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('cuentas_list') }}">Volver</a>
+  </div>
 </div>
 <div class="panel">
   <form method="post" class="row g-3">

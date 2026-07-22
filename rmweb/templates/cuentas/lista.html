@@ -65,6 +65,7 @@
           <td><span class="estado {{ cxc_estado_class(r.estado) }}">{{ cxc_estado_label(r.estado) }}</span></td>
           <td class="actions-cell">
             <a class="btn-act ver" href="{{ url_for('cuentas_detalle', cuenta_id=r.id) }}" title="Visualizar"><i class="bi bi-eye"></i></a>
+            <a class="btn-act pdf" href="{{ url_for('cuentas_pdf', cuenta_id=r.id) }}" title="PDF"><i class="bi bi-file-earmark-pdf"></i></a>
             <a class="btn-act edit" href="{{ url_for('cuentas_form', cuenta_id=r.id) }}" title="Modificar"><i class="bi bi-pencil-square"></i></a>
             {% if r.saldo and r.saldo > 0 %}
             <a class="btn-act abono" href="{{ url_for('cuentas_abono', cuenta_id=r.id) }}" title="Abonar"><i class="bi bi-cash"></i></a>
