@@ -920,19 +920,24 @@ def cotizacion_pdf_bytes(cot, items, empresa_row, iva_pct: float = 0.19) -> byte
 
 
 def _pdf_header_portrait(pdf, empresa_row, subtitle: str) -> None:
-    """Encabezado vertical: logo a la izquierda, datos a la derecha, título debajo."""
+    """Encabezado: logo arriba, datos de empresa debajo (sin amontonar al costado)."""
     left = 12.0
-    logo_w = 28.0
-    gap = 14.0  # separación clara logo ↔ textos
-    text_x = left + logo_w + gap
+    right = pdf.w - pdf.r_margin
+    content_w = right - left
     top = 10.0
-    text_w = pdf.w - pdf.r_margin - text_x
+    logo_w = 36.0
 
     logo = LOGO_RIOMAIPO if LOGO_RIOMAIPO.exists() else LOGO_ERP
     logo_h = 0.0
     if logo.exists():
         pdf.image(str(logo), x=left, y=top, w=logo_w)
         logo_h = logo_w * (270 / 390)
+
+    # Fecha alineada a la derecha, a la altura del logo
+    pdf.set_xy(left, top + 2)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(content_w, 5, _pdf_txt(date.today().strftime("%d/%m/%Y")), align="R", ln=1)
 
     razon = "RIO MAIPO Constructora"
     rut = telefono = email = direccion = ""
@@ -949,48 +954,38 @@ def _pdf_header_portrait(pdf, empresa_row, subtitle: str) -> None:
         if "direccion" in keys and empresa_row["direccion"]:
             direccion = str(empresa_row["direccion"])
 
-    # Bloque de textos a la derecha, con líneas separadas (sin amontonar)
-    line_h = 5.0
-    block_lines = 1 + (1 if rut else 0) + (1 if (telefono or email) else 0) + (1 if direccion else 0)
-    block_h = 6.5 + max(0, block_lines - 1) * line_h
-    y = top + max(0.0, (logo_h - block_h) / 2.0)
-
-    pdf.set_xy(text_x, y)
-    pdf.set_font("Helvetica", "B", 13)
+    y = top + logo_h + 4
+    pdf.set_xy(left, y)
+    pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(22, 58, 95)
-    pdf.cell(text_w, 6.5, _pdf_txt(razon), ln=1)
-    y = pdf.get_y() + 0.8
+    pdf.cell(content_w, 6, _pdf_txt(razon), ln=1)
 
     pdf.set_text_color(90, 100, 110)
     pdf.set_font("Helvetica", "", 9)
+    meta = []
     if rut:
-        pdf.set_xy(text_x, y)
-        pdf.cell(text_w, line_h, _pdf_txt(f"RUT {rut}"), ln=1)
-        y = pdf.get_y()
-    if telefono or email:
-        pdf.set_xy(text_x, y)
-        contact = "   |   ".join(p for p in (telefono, email) if p)
-        pdf.cell(text_w, line_h, _pdf_txt(contact), ln=1)
-        y = pdf.get_y()
+        meta.append(f"RUT {rut}")
+    if telefono:
+        meta.append(telefono)
+    if email:
+        meta.append(email)
+    if meta:
+        pdf.set_x(left)
+        pdf.cell(content_w, 5, _pdf_txt("   ·   ".join(meta)), ln=1)
     if direccion:
-        pdf.set_xy(text_x, y)
-        pdf.cell(text_w, line_h, _pdf_txt(direccion), ln=1)
-        y = pdf.get_y()
+        pdf.set_x(left)
+        pdf.cell(content_w, 5, _pdf_txt(direccion), ln=1)
 
-    # Bajo el bloque más alto (logo o textos)
-    y = max(y, top + logo_h) + 5
+    y = pdf.get_y() + 3
     pdf.set_draw_color(180, 190, 200)
     pdf.set_line_width(0.35)
-    pdf.line(left, y, pdf.w - pdf.r_margin, y)
+    pdf.line(left, y, right, y)
     y += 4
 
     pdf.set_xy(left, y)
     pdf.set_text_color(22, 58, 95)
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(120, 7, _pdf_txt(subtitle), align="L")
-    pdf.set_font("Helvetica", "", 9)
-    pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 7, _pdf_txt(date.today().strftime("%d/%m/%Y")), align="R", ln=1)
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(content_w, 7, _pdf_txt(subtitle), ln=1)
     pdf.set_text_color(0, 0, 0)
     pdf.ln(3)
 
