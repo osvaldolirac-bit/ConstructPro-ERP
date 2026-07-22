@@ -260,6 +260,59 @@ def get_user_if_valid(usuario: str, clave: str):
     return dict(row)
 
 
+def ensure_cxc_from_cotizacion(c: sqlite3.Connection, cot_id: int) -> str | None:
+    """
+    Si la cotización está aprobada y aún no tiene CxC, crea el documento.
+    Retorna el código del documento creado, o None si no correspondía crear.
+    """
+    cot = c.execute(
+        """
+        SELECT id, folio, cliente_id, estado, total, cxc_id, asunto, titulo, proyecto
+        FROM cotizaciones WHERE id=?
+        """,
+        (cot_id,),
+    ).fetchone()
+    if not cot:
+        return None
+    if (cot["estado"] or "") != "aprobada":
+        return None
+    if cot["cxc_id"]:
+        return None
+    if not cot["cliente_id"]:
+        return None
+
+    dias = int(param(c, "dias_credito", 30))
+    doc = next_code(c, "cuentas", "documento", "EP")
+    concepto = f"Desde cotización {cot['folio']}"
+    titulo = (cot["titulo"] or cot["asunto"] or cot["proyecto"] or "").strip()
+    if titulo:
+        concepto = f"{concepto} · {titulo[:80]}"
+    monto = float(cot["total"] or 0)
+    cur = c.cursor()
+    cur.execute(
+        """
+        INSERT INTO cuentas
+        (documento, cliente_id, cotizacion_id, tipo_doc, concepto,
+         fecha_emision, fecha_vencimiento, monto, abonado, saldo, estado, facturado)
+        VALUES (?,?,?,?,?,?,?,?,0,?, 'pendiente', 0)
+        """,
+        (
+            doc,
+            cot["cliente_id"],
+            cot["id"],
+            "EP",
+            concepto,
+            date.today().isoformat(),
+            (date.today() + timedelta(days=dias)).isoformat(),
+            monto,
+            monto,
+        ),
+    )
+    cxc_id = cur.lastrowid
+    cur.execute("UPDATE cotizaciones SET cxc_id=? WHERE id=?", (cxc_id, cot["id"]))
+    return doc
+
+
 def calc_cotizacion_totales(subtotal: float, gg_pct: float, utilidad_pct: float, iva_pct: float) -> dict:
     sub = float(subtotal or 0)
     gg = int(round(sub * float(gg_pct or 0) / 100.0))

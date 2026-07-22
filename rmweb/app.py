@@ -432,8 +432,14 @@ def cotizaciones_form(cot_id: int | None = None):
                 """,
                 [(cid, *ln) for ln in lineas],
             )
+            cxc_doc = None
+            if estado == "aprobada":
+                cxc_doc = core.ensure_cxc_from_cotizacion(db, cid)
             db.commit()
-            flash(f"{folio} guardada · total {core.clp(tots['total'])}", "ok")
+            msg = f"{folio} guardada · total {core.clp(tots['total'])}"
+            if cxc_doc:
+                msg += f" · CxC {cxc_doc} generada"
+            flash(msg, "ok")
             db.close()
             return redirect(url_for("cotizaciones_detalle", cot_id=cid))
 
@@ -483,12 +489,24 @@ def cotizaciones_detalle(cot_id: int):
         """,
         (cot_id,),
     ).fetchall()
+    items = [
+        it
+        for it in items
+        if not core._is_gg_line(it["descripcion"]) and not core._is_util_line(it["descripcion"])
+    ]
+    cxc = None
+    if cot["cxc_id"]:
+        cxc = db.execute(
+            "SELECT id, documento, num_factura, saldo, estado FROM cuentas WHERE id=?",
+            (cot["cxc_id"],),
+        ).fetchone()
     db.close()
     return render_template(
         "cotizaciones/detalle.html",
         active="cotizaciones",
         cot=cot,
         items=items,
+        cxc=cxc,
     )
 
 
@@ -551,9 +569,15 @@ def cotizaciones_estado(cot_id: int):
     estado = request.form.get("estado") or "borrador"
     db = core.conn()
     db.execute("UPDATE cotizaciones SET estado=? WHERE id=?", (estado, cot_id))
+    cxc_doc = None
+    if estado == "aprobada":
+        cxc_doc = core.ensure_cxc_from_cotizacion(db, cot_id)
     db.commit()
     db.close()
-    flash("Estado actualizado", "ok")
+    if cxc_doc:
+        flash(f"Estado actualizado · CxC {cxc_doc} generada automáticamente", "ok")
+    else:
+        flash("Estado actualizado", "ok")
     return redirect(url_for("cotizaciones_detalle", cot_id=cot_id))
 
 

@@ -10,8 +10,22 @@
     <a class="btn btn-outline-secondary" href="{{ url_for('cotizaciones_list') }}">Volver</a>
     <a class="btn btn-info text-white" href="{{ url_for('cotizaciones_pdf', cot_id=cot.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
     <a class="btn btn-warning text-white" href="{{ url_for('cotizaciones_form', cot_id=cot.id) }}"><i class="bi bi-pencil-square"></i> Editar</a>
+    {% if cxc %}
+    <a class="btn btn-outline-primary" href="{{ url_for('cuentas_detalle', cuenta_id=cxc.id) }}"><i class="bi bi-cash-stack"></i> Ver CxC {{ cxc.documento }}</a>
+    {% endif %}
   </div>
 </div>
+{% if cxc %}
+<div class="alert alert-success py-2">
+  Cuenta por cobrar vinculada: <strong>{{ cxc.documento }}</strong>
+  · saldo {{ clp(cxc.saldo) }}
+  · <span class="estado {{ cxc_estado_class(cxc.estado) }}">{{ cxc_estado_label(cxc.estado) }}</span>
+</div>
+{% elif cot.estado == 'aprobada' %}
+<div class="alert alert-warning py-2">
+  Cotización aprobada sin CxC. Al actualizar el estado a <strong>aprobada</strong> se genera automáticamente.
+</div>
+{% endif %}
 <div class="row g-3 mb-3">
   <div class="col-md-2"><div class="panel"><div class="text-muted small">Subtotal neto</div><strong>{{ clp(cot.subtotal) }}</strong></div></div>
   <div class="col-md-2"><div class="panel"><div class="text-muted small">GG {{ (cot.gg_pct or 0)|round(1) }}%</div><strong>{{ clp(cot.gg_monto) }}</strong></div></div>
@@ -50,6 +64,9 @@
     </div>
     <div class="col-auto">
       <button class="btn btn-primary" type="submit">Actualizar estado</button>
+    </div>
+    <div class="col-12">
+      <div class="form-text">Al pasar a <strong>aprobada</strong>, se genera la cuenta por cobrar automáticamente si aún no existe.</div>
     </div>
   </form>
 </div>
