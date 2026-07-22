@@ -2,68 +2,25 @@
 
 URL: **https://erpmaster.cl/riomaipo/**
 
-## Por qué cae en La Concepción
+## Plataforma
 
-En el VPS, nginx hoy hace:
-
-```
-/riomaipo  →  302  →  /laconcepcion/
-```
-
-porque **no existe** un `location /riomaipo/`.  
-Los cambios en GitHub **no** modifican nginx solos: hay que instalar en el servidor.
-
-## Modelo igual a producción / demo
+Río Maipo corre en **Flask + Bootstrap 5 + DataTables** (UI tipo SOLUERP), no Streamlit.
 
 | Ruta | App | Puerto |
 |------|-----|--------|
-| `/laconcepcion/` | Streamlit La Concepción | 85xx (ej. 8501) |
+| `/laconcepcion/` | Streamlit La Concepción | 85xx |
 | `/demo/` | Streamlit Demo | otro 85xx |
-| **`/riomaipo/`** | **Streamlit Río Maipo** | **8505** |
+| **`/riomaipo/`** | **Flask Río Maipo (`rmweb`)** | **8505** |
 
-## Instalación en el VPS (obligatorio)
+Misma base SQLite de producción: `data/riomaipo_erp.db`.
 
-En el servidor (SSH), dentro del repo:
+## Módulos
 
-```bash
-cd /var/www/erpmaster/constructpro-erp   # ajusta la ruta real
-git pull
-sudo bash scripts/install_riomaipo_vps.sh
-```
-
-Ese script:
-
-1. Crea venv e instala dependencias  
-2. Levanta systemd `riomaipo` en **127.0.0.1:8505** con `baseUrlPath=riomaipo`  
-3. Crea `/etc/nginx/snippets/riomaipo-location.conf`  
-4. Inserta el `include` **antes** del redirect a La Concepción  
-5. Recarga nginx  
-
-### Verificar
-
-```bash
-curl -sI https://erpmaster.cl/riomaipo/
-# Debe ser HTTP 200 (NO 302 a /laconcepcion/)
-```
-
-En el navegador debe verse el banner **「ERP Master · Río Maipo」**.
-
-Si sigue La Concepción:
-
-```bash
-sudo nginx -T 2>/dev/null | grep -n -E 'riomaipo|laconcepcion'
-```
-
-El `location /riomaipo` debe aparecer **antes** del `return 302 ... laconcepcion`.
-
-## Módulos (estilo SOLUERP, gestión mejorada)
-
-- **Dashboard** — embudo de cotizaciones, aging de cobranza, alertas de mora/vencimiento  
-- **Clientes** — ficha + vista 360 (deuda y cotizaciones)  
-- **Proveedores** / **Productos** — maestros para cotizar  
-- **Cotizaciones** — ítems desde catálogo, estados, **generar CxC al aprobar**  
-- **Cuentas por cobrar** — cartera, filtros, abonos, días de mora  
-- **Administración** — mi empresa + parámetros (IVA, validez, crédito) 
+- Dashboard
+- Clientes
+- Cotizaciones (KPIs, DataTables, Ver/PDF/Edit/Del, PDF formato Agrocastilla)
+- Cuentas por cobrar (KPIs, factura, abonos, Vista 360)
+- Administración (empresa / parámetros)
 
 ## Local
 
@@ -71,12 +28,25 @@ El `location /riomaipo` debe aparecer **antes** del `return 302 ... laconcepcion
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-./scripts/start_riomaipo.sh
+export PYTHONPATH=$PWD
+export RIOMAIPO_DB=$PWD/data/riomaipo_erp.db
+gunicorn -b 127.0.0.1:8505 -w 2 rmweb.wsgi:app
 ```
 
-Abrir: http://127.0.0.1:8505/riomaipo/
+Abrir: http://127.0.0.1:8505/login
 
-## Nota FastAPI
+## VPS
 
-También existe un carril FastAPI en `app/` (puerto 8010) como API/alternativa.  
-En este VPS la ruta pública `/riomaipo` se publica con **Streamlit**, igual que demo y La Concepción.
+Servicio: `erp-riomaipo` → gunicorn  
+Nginx: `location /riomaipo/` → `proxy_pass http://127.0.0.1:8505/;` + `X-Forwarded-Prefix /riomaipo`
+
+```bash
+systemctl status erp-riomaipo
+curl -sI https://erpmaster.cl/riomaipo/login
+```
+
+Acceso: `osvaldolira@constructorariomaipo.cl` / clave `9083`
+
+## Nota
+
+`app_riomaipo.py` (Streamlit) queda como referencia histórica; la app activa es `rmweb/`.
