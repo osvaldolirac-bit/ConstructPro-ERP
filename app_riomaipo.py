@@ -718,6 +718,26 @@ def migrate_cotizaciones_schema(c: sqlite3.Connection) -> None:
             ("orden", "INTEGER DEFAULT 0"),
         ],
     )
+
+
+def migrate_cuentas_schema(c: sqlite3.Connection) -> None:
+    _ensure_columns(
+        c,
+        "cuentas",
+        [
+            ("facturado", "INTEGER DEFAULT 0"),
+            ("num_factura", "TEXT"),
+        ],
+    )
+    # Si ya tiene número de factura, marcar como facturado
+    c.execute(
+        """
+        UPDATE cuentas
+        SET facturado=1
+        WHERE COALESCE(TRIM(num_factura),'') != ''
+          AND COALESCE(facturado,0)=0
+        """
+    )
     for clave, nombre, valor, unidad in [
         ("gg_pct", "Gastos generales", "5", "%"),
         ("utilidad_pct", "Utilidad", "15", "%"),
@@ -1503,6 +1523,8 @@ def init_db() -> None:
             concepto TEXT, fecha_emision TEXT, fecha_vencimiento TEXT,
             monto REAL DEFAULT 0, abonado REAL DEFAULT 0, saldo REAL DEFAULT 0,
             estado TEXT DEFAULT 'pendiente',
+            facturado INTEGER DEFAULT 0,
+            num_factura TEXT,
             FOREIGN KEY(cliente_id) REFERENCES clientes(id)
         );
         CREATE TABLE IF NOT EXISTS abonos (
@@ -1634,6 +1656,7 @@ def init_db() -> None:
             (em2.isoformat(), ve2.isoformat()),
         )
     migrate_cotizaciones_schema(c)
+    migrate_cuentas_schema(c)
     ensure_default_user(c)
     c.commit()
     c.close()
@@ -1727,7 +1750,9 @@ def list_cxc_documentos(c: sqlite3.Connection, busqueda: str | None = None):
         SELECT cu.id, cu.documento, cu.tipo_doc, cu.concepto,
                cu.fecha_emision, cu.fecha_vencimiento,
                cu.monto, cu.abonado, cu.saldo, cu.estado,
-               cu.cotizacion_id, cl.razon_social AS cliente
+               cu.cotizacion_id, COALESCE(cu.facturado,0) AS facturado,
+               COALESCE(cu.num_factura,'') AS num_factura,
+               cl.razon_social AS cliente
         FROM cuentas cu
         LEFT JOIN clientes cl ON cl.id = cu.cliente_id
         WHERE 1=1
@@ -1735,8 +1760,11 @@ def list_cxc_documentos(c: sqlite3.Connection, busqueda: str | None = None):
     params: list = []
     if busqueda and busqueda.strip():
         like = f"%{busqueda.strip()}%"
-        sql += " AND (cl.razon_social LIKE ? OR cu.documento LIKE ? OR cu.concepto LIKE ?)"
-        params.extend([like, like, like])
+        sql += (
+            " AND (cl.razon_social LIKE ? OR cu.documento LIKE ?"
+            " OR cu.concepto LIKE ? OR cu.num_factura LIKE ?)"
+        )
+        params.extend([like, like, like, like])
     sql += " ORDER BY cu.id DESC"
     return c.execute(sql, params).fetchall()
 
@@ -1800,7 +1828,9 @@ def render_vista_360_cliente(db: sqlite3.Connection, clientes, key_prefix: str =
     cuentas = db.execute(
         """
         SELECT id, documento, tipo_doc, concepto, fecha_emision, fecha_vencimiento,
-               monto, abonado, saldo, estado
+               monto, abonado, saldo, estado,
+               COALESCE(facturado,0) AS facturado,
+               COALESCE(num_factura,'') AS num_factura
         FROM cuentas WHERE cliente_id=? ORDER BY id DESC
         """,
         (cid,),
@@ -1878,6 +1908,7 @@ def render_vista_360_cliente(db: sqlite3.Connection, clientes, key_prefix: str =
             rows.append(
                 {
                     "Documento": x["documento"],
+                    "Nº Factura": x["num_factura"] or "—",
                     "Tipo": cxc_tipo_label(x["tipo_doc"]),
                     "Emisión": fmt_dmy(x["fecha_emision"]),
                     "Vence": fmt_dmy(x["fecha_vencimiento"]),
@@ -3089,6 +3120,15 @@ elif modulo == "Cuentas por cobrar":
                     cliente = r["cliente"] or "—"
                     doc = r["documento"] or "—"
                     concepto = (r["concepto"] or "").strip()
+                    num_fac = ""
+                    if "num_factura" in r.keys() and r["num_factura"]:
+                        num_fac = str(r["num_factura"]).strip()
+                    facturado = bool(r["facturado"]) if "facturado" in r.keys() and r["facturado"] else bool(num_fac)
+                    fac_line = (
+                        f'<div class="cxc-card-meta"><strong>Factura {num_fac}</strong></div>'
+                        if num_fac
+                        else ('<div class="cxc-card-meta">Sin Nº factura</div>' if not facturado else "")
+                    )
 
                     with st.container(border=True):
                         c_info, c_money, c_est, c_act = st.columns(
@@ -3106,6 +3146,7 @@ elif modulo == "Cuentas por cobrar":
                                     <strong class="cot-num">{doc}</strong> · {tipo_lbl}
                                     {" · " + concepto if concepto else ""}
                                   </div>
+                                  {fac_line}
                                   <div class="cxc-card-meta">
                                     Emisión {fmt_dmy(r["fecha_emision"])} · Vence {fmt_dmy(r["fecha_vencimiento"])}
                                   </div>
@@ -3172,6 +3213,10 @@ elif modulo == "Cuentas por cobrar":
             else:
                 est_cls = cxc_estado_class(cuenta["estado"])
                 badge = "ok" if est_cls == "pagado" else ("warn" if est_cls == "abonado" else "muted")
+                num_fac = ""
+                if "num_factura" in cuenta.keys() and cuenta["num_factura"]:
+                    num_fac = str(cuenta["num_factura"]).strip()
+                fac_txt = f" · Factura <strong>{num_fac}</strong>" if num_fac else " · Sin Nº factura"
                 st.markdown(
                     f"""
                     <div class="panel">
@@ -3182,7 +3227,7 @@ elif modulo == "Cuentas por cobrar":
                       <p style="margin:.45rem 0 0;color:var(--muted);">
                         {cuenta['razon_social'] or '—'} ·
                         {cxc_tipo_label(cuenta['tipo_doc'], cuenta['cotizacion_id'])} ·
-                        {cuenta['concepto'] or 'Sin concepto'}
+                        {cuenta['concepto'] or 'Sin concepto'}{fac_txt}
                       </p>
                     </div>
                     """,
@@ -3269,6 +3314,15 @@ elif modulo == "Cuentas por cobrar":
                     if edit_row
                     else date.today() + timedelta(days=dias_credito)
                 )
+                facturado_default = False
+                num_fac_default = ""
+                if edit_row:
+                    if "facturado" in edit_row.keys() and edit_row["facturado"]:
+                        facturado_default = True
+                    if "num_factura" in edit_row.keys() and edit_row["num_factura"]:
+                        num_fac_default = str(edit_row["num_factura"])
+                        facturado_default = True
+
                 with st.form("f_cxc"):
                     cliente_id = st.selectbox(
                         "Cliente",
@@ -3289,64 +3343,96 @@ elif modulo == "Cuentas por cobrar":
                     )
                     emision = st.date_input("Fecha emisión", value=em_default or date.today())
                     venc = st.date_input("Fecha vencimiento", value=ve_default or date.today())
+
+                    st.markdown("#### Facturación")
+                    facturado = st.checkbox(
+                        "Documento facturado",
+                        value=facturado_default,
+                        help="Marca cuando el documento ya tiene factura tributaria emitida",
+                    )
+                    num_factura = st.text_input(
+                        "Número de factura",
+                        value=num_fac_default,
+                        placeholder="Ej: 1234 o F-001234",
+                        help="Ingresa el número una vez que esté facturado",
+                    )
+                    if facturado and tipo == "EP":
+                        st.caption("Al guardar como facturado, el tipo pasará a FAC si dejas EP.")
+
                     guardar = st.form_submit_button(
                         "Guardar cambios" if mode == "edit" else "Guardar documento",
                         type="primary",
                     )
 
                 if guardar:
-                    if mode == "edit" and edit_row:
-                        db.execute(
-                            """
-                            UPDATE cuentas
-                            SET cliente_id=?, tipo_doc=?, concepto=?, fecha_emision=?,
-                                fecha_vencimiento=?, monto=?
-                            WHERE id=?
-                            """,
-                            (
-                                cliente_id,
-                                tipo,
-                                concepto.strip() or None,
-                                emision.isoformat(),
-                                venc.isoformat(),
-                                float(monto),
-                                edit_row["id"],
-                            ),
-                        )
-                        recalc_cuenta(db, int(edit_row["id"]))
-                        db.commit()
-                        st.success(f"{edit_row['documento']} actualizado")
-                        st.session_state.cxc_mode = "view"
-                        st.session_state.cxc_focus_id = edit_row["id"]
-                        st.rerun()
+                    num_fac = (num_factura or "").strip() or None
+                    es_facturado = 1 if (facturado or bool(num_fac)) else 0
+                    if es_facturado and not num_fac:
+                        st.error("Ingresa el número de factura para marcarlo como facturado.")
                     else:
-                        pref = tipo if tipo in ("EP", "FAC", "ND") else "EP"
-                        doc = next_code(db, "cuentas", "documento", pref)
-                        cur = db.cursor()
-                        cur.execute(
-                            """
-                            INSERT INTO cuentas
-                            (documento, cliente_id, tipo_doc, concepto, fecha_emision,
-                             fecha_vencimiento, monto, abonado, saldo, estado)
-                            VALUES (?,?,?,?,?,?,?,0,?, 'pendiente')
-                            """,
-                            (
-                                doc,
-                                cliente_id,
-                                tipo,
-                                concepto.strip() or None,
-                                emision.isoformat(),
-                                venc.isoformat(),
-                                float(monto),
-                                float(monto),
-                            ),
-                        )
-                        new_id = cur.lastrowid
-                        db.commit()
-                        st.success(f"Documento {doc} creado")
-                        st.session_state.cxc_mode = "view"
-                        st.session_state.cxc_focus_id = new_id
-                        st.rerun()
+                        tipo_save = tipo
+                        if es_facturado and tipo_save == "EP":
+                            tipo_save = "FAC"
+                        if mode == "edit" and edit_row:
+                            db.execute(
+                                """
+                                UPDATE cuentas
+                                SET cliente_id=?, tipo_doc=?, concepto=?, fecha_emision=?,
+                                    fecha_vencimiento=?, monto=?, facturado=?, num_factura=?
+                                WHERE id=?
+                                """,
+                                (
+                                    cliente_id,
+                                    tipo_save,
+                                    concepto.strip() or None,
+                                    emision.isoformat(),
+                                    venc.isoformat(),
+                                    float(monto),
+                                    es_facturado,
+                                    num_fac,
+                                    edit_row["id"],
+                                ),
+                            )
+                            recalc_cuenta(db, int(edit_row["id"]))
+                            db.commit()
+                            msg = f"{edit_row['documento']} actualizado"
+                            if num_fac:
+                                msg += f" · Factura {num_fac}"
+                            st.success(msg)
+                            st.session_state.cxc_mode = "view"
+                            st.session_state.cxc_focus_id = edit_row["id"]
+                            st.rerun()
+                        else:
+                            pref = tipo_save if tipo_save in ("EP", "FAC", "ND") else "EP"
+                            doc = next_code(db, "cuentas", "documento", pref)
+                            cur = db.cursor()
+                            cur.execute(
+                                """
+                                INSERT INTO cuentas
+                                (documento, cliente_id, tipo_doc, concepto, fecha_emision,
+                                 fecha_vencimiento, monto, abonado, saldo, estado,
+                                 facturado, num_factura)
+                                VALUES (?,?,?,?,?,?,?,0,?, 'pendiente', ?, ?)
+                                """,
+                                (
+                                    doc,
+                                    cliente_id,
+                                    tipo_save,
+                                    concepto.strip() or None,
+                                    emision.isoformat(),
+                                    venc.isoformat(),
+                                    float(monto),
+                                    float(monto),
+                                    es_facturado,
+                                    num_fac,
+                                ),
+                            )
+                            new_id = cur.lastrowid
+                            db.commit()
+                            st.success(f"Documento {doc} creado")
+                            st.session_state.cxc_mode = "view"
+                            st.session_state.cxc_focus_id = new_id
+                            st.rerun()
 
         # =====================================================================
         # REGISTRAR ABONO
