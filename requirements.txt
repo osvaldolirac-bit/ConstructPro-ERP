@@ -8,3 +8,7 @@ python-multipart
 jinja2
 itsdangerous
 streamlit
+flask
+gunicorn
+fpdf
+werkzeug

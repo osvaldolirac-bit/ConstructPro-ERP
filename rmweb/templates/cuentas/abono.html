@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Abono {{ cuenta.documento }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Abono · {{ cuenta.documento }}</h1>
+    <p>{{ cuenta.razon_social or '—' }} · Saldo {{ clp(cuenta.saldo) }}</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('cuentas_detalle', cuenta_id=cuenta.id) }}">Volver</a>
+</div>
+<div class="panel" style="max-width:520px">
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label fw-bold">Monto abono</label>
+      <input class="form-control" type="number" step="1" name="monto" value="{{ cuenta.saldo }}" max="{{ cuenta.saldo }}" min="1" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label fw-bold">Medio</label>
+      <select class="form-select" name="medio">
+        {% for m in ['transferencia','cheque','efectivo','tarjeta','otro'] %}
+        <option value="{{ m }}">{{ m }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label fw-bold">Nota</label>
+      <input class="form-control" name="nota">
+    </div>
+    <button class="btn btn-success fw-bold" type="submit">Registrar abono</button>
+  </form>
+</div>
+{% endblock %}

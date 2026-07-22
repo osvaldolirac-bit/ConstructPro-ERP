@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Vista 360{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Vista 360 del cliente</h1>
+    <p>Deuda, documentos, abonos y cotizaciones.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('cuentas_list') }}">Volver a cartera</a>
+</div>
+<div class="panel">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-md-6">
+      <label class="form-label fw-bold">Cliente</label>
+      <select class="form-select" name="cliente_id" onchange="this.form.submit()">
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if cid==c.id %}selected{% endif %}>{{ c.razon_social }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+</div>
+{% if cli %}
+<div class="panel">
+  <h4 class="fw-bold mb-1">{{ cli.razon_social }}</h4>
+  <div class="text-muted">RUT {{ cli.rut or '—' }} · {{ cli.contacto or 'Sin contacto' }} · {{ cli.telefono or '—' }} · {{ cli.email or '—' }}</div>
+  <div class="mt-3"><strong>Deuda abierta:</strong> <span class="{% if deuda>0 %}text-danger{% else %}text-success{% endif %} fw-bold">{{ clp(deuda) }}</span></div>
+</div>
+<div class="panel">
+  <h5 class="fw-bold">Cuentas por cobrar</h5>
+  <table class="table table-sm datatable">
+    <thead><tr><th>Documento</th><th>Factura</th><th>Vence</th><th>Total</th><th>Saldo</th><th>Estado</th></tr></thead>
+    <tbody>
+      {% for x in cuentas %}
+      <tr>
+        <td>{{ x.documento }}</td>
+        <td>{{ x.num_factura or '—' }}</td>
+        <td>{{ fmt_dmy(x.fecha_vencimiento) }}</td>
+        <td>{{ clp(x.monto) }}</td>
+        <td>{{ clp(x.saldo) }}</td>
+        <td>{{ cxc_estado_label(x.estado) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="panel">
+  <h5 class="fw-bold">Últimos abonos</h5>
+  <table class="table table-sm">
+    <thead><tr><th>Fecha</th><th>Documento</th><th>Monto</th><th>Medio</th></tr></thead>
+    <tbody>
+      {% for a in abonos %}
+      <tr><td>{{ fmt_dmy(a.fecha) }}</td><td>{{ a.documento }}</td><td>{{ clp(a.monto) }}</td><td>{{ a.medio }}</td></tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted">Sin abonos</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="panel">
+  <h5 class="fw-bold">Cotizaciones</h5>
+  <table class="table table-sm">
+    <thead><tr><th>Folio</th><th>Fecha</th><th>Título</th><th>Estado</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for c in cots %}
+      <tr><td>{{ c.folio }}</td><td>{{ fmt_dmy(c.fecha) }}</td><td>{{ c.titulo }}</td><td>{{ estado_label_cot(c.estado) }}</td><td>{{ clp(c.total) }}</td></tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">Sin cotizaciones</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if edit else 'Nuevo' }} documento{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if edit %}Modificar {{ edit.documento }}{% else %}Nuevo documento{% endif %}</h1>
+    <p>Incluye opción de número de factura cuando esté facturado.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('cuentas_list') }}">Volver</a>
+</div>
+<div class="panel">
+  <form method="post" class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label fw-bold">Cliente</label>
+      <select class="form-select" name="cliente_id" required>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if edit and edit.cliente_id==c.id %}selected{% endif %}>{{ c.razon_social }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-bold">Tipo</label>
+      <select class="form-select" name="tipo_doc">
+        {% for t in ['EP','FAC','ND'] %}
+        <option value="{{ t }}" {% if edit and edit.tipo_doc==t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-bold">Monto</label>
+      <input class="form-control" type="number" step="1" name="monto" value="{{ edit.monto if edit else 1000000 }}" required>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label fw-bold">Concepto</label>
+      <input class="form-control" name="concepto" value="{{ edit.concepto if edit and edit.concepto else 'Estado de pago' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-bold">Emisión</label>
+      <input class="form-control" type="date" name="fecha_emision" value="{{ edit.fecha_emision if edit else today }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-bold">Vencimiento</label>
+      <input class="form-control" type="date" name="fecha_vencimiento" value="{{ edit.fecha_vencimiento if edit else vence_default }}">
+    </div>
+    <div class="col-12"><hr><h6 class="fw-bold">Facturación</h6></div>
+    <div class="col-md-4">
+      <div class="form-check mt-4">
+        <input class="form-check-input" type="checkbox" name="facturado" id="facturado" value="1"
+          {% if edit and (edit.facturado or edit.num_factura) %}checked{% endif %}>
+        <label class="form-check-label fw-bold" for="facturado">Documento facturado</label>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label fw-bold">Número de factura</label>
+      <input class="form-control" name="num_factura" value="{{ edit.num_factura if edit and edit.num_factura else '' }}" placeholder="Ej: 1234">
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary fw-bold" type="submit">Guardar</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Dashboard de gestión</h1>
+    <p>Salud de cartera y embudo comercial.</p>
+  </div>
+</div>
+<div class="kpi-grid">
+  <div class="kpi blue"><div class="label">Cotizaciones</div><div class="value">{{ n_cot }}</div><div class="hint">{{ clp(sum_cot) }}</div></div>
+  <div class="kpi green"><div class="label">Aprobadas</div><div class="value">{{ n_apr }}</div><div class="hint">Conversión {{ '%.0f'|format((n_apr/n_cot*100) if n_cot else 0) }}%</div></div>
+  <div class="kpi orange"><div class="label">Saldo cartera</div><div class="value">{{ clp(saldo) }}</div><div class="hint">{{ pend }} con saldo</div></div>
+  <div class="kpi pink"><div class="label">Vencidos</div><div class="value">{{ venc }}</div><div class="hint">Documentos en mora</div></div>
+  <div class="kpi cyan"><div class="label">Módulos</div><div class="value">Web</div><div class="hint">Flask + DataTables</div></div>
+</div>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="panel">
+      <h5 class="fw-bold text-primary mb-3">Embudo de cotizaciones</h5>
+      <table class="table table-sm">
+        <thead><tr><th>Estado</th><th>Cantidad</th><th>Monto</th></tr></thead>
+        <tbody>
+          {% for r in cotas %}
+          <tr><td>{{ estado_label_cot(r.estado) }}</td><td>{{ r.n }}</td><td>{{ clp(r.t) }}</td></tr>
+          {% else %}
+          <tr><td colspan="3" class="text-muted">Sin datos</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="panel">
+      <h5 class="fw-bold text-primary mb-3">Top clientes por deuda</h5>
+      <table class="table table-sm">
+        <thead><tr><th>Cliente</th><th>Saldo</th></tr></thead>
+        <tbody>
+          {% for r in top %}
+          <tr><td>{{ r.razon_social or '—' }}</td><td>{{ clp(r.saldo) }}</td></tr>
+          {% else %}
+          <tr><td colspan="2" class="text-muted">Sin saldos abiertos</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
