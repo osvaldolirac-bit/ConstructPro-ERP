@@ -558,6 +558,7 @@ def cotizaciones_estado(cot_id: int):
 def cuentas_list():
     q = (request.args.get("q") or "").strip()
     db = core.conn()
+    core.scrub_import_labels(db)
     core.sync_cuenta_cotizacion_links(db)
     sql = """
         SELECT cu.*, cl.razon_social AS cliente, cot.folio AS cot_folio
@@ -613,6 +614,7 @@ def cuentas_list():
 
 
 def _load_vista360(db, cid: int | None):
+    core.scrub_import_labels(db)
     core.sync_cuenta_cotizacion_links(db)
     cli = db.execute("SELECT * FROM clientes WHERE id=?", (cid,)).fetchone() if cid else None
     cuentas = []

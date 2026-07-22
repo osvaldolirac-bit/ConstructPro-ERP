@@ -168,6 +168,7 @@ def init_db() -> None:
     )
     _ensure_columns(c, "cotizacion_items", [("obs", "TEXT"), ("orden", "INTEGER DEFAULT 0")])
     _ensure_columns(c, "cuentas", [("facturado", "INTEGER DEFAULT 0"), ("num_factura", "TEXT")])
+    scrub_import_labels(c)
     sync_cuenta_cotizacion_links(c)
 
     if c.execute("SELECT COUNT(*) FROM empresa").fetchone()[0] == 0:
@@ -329,6 +330,67 @@ def _pdf_txt(value) -> str:
         .replace("’", "'")
     )
     return s.encode("latin-1", "replace").decode("latin-1")
+
+
+def scrub_import_labels(c: sqlite3.Connection) -> dict:
+    """Elimina textos 'importado' / 'SOLUERP' de conceptos, notas y medios."""
+    stats = {"cuentas": 0, "abonos_nota": 0, "abonos_medio": 0, "cotizaciones": 0}
+
+    # Cuentas: "Importado SOLUERP 254" → vacío (el Nº queda en num_factura)
+    cur = c.execute(
+        """
+        UPDATE cuentas
+        SET concepto=NULL
+        WHERE concepto IS NOT NULL
+          AND (
+            lower(concepto) LIKE '%importad%'
+            OR lower(concepto) LIKE '%soluerp%'
+          )
+        """
+    )
+    stats["cuentas"] = cur.rowcount if cur.rowcount is not None else 0
+
+    cur = c.execute(
+        """
+        UPDATE abonos
+        SET nota=NULL
+        WHERE nota IS NOT NULL
+          AND (
+            lower(nota) LIKE '%importad%'
+            OR lower(nota) LIKE '%soluerp%'
+          )
+        """
+    )
+    stats["abonos_nota"] = cur.rowcount if cur.rowcount is not None else 0
+
+    cur = c.execute(
+        """
+        UPDATE abonos
+        SET medio='Transferencia'
+        WHERE medio IS NOT NULL
+          AND (
+            lower(medio) LIKE '%importad%'
+            OR lower(medio) LIKE '%soluerp%'
+          )
+        """
+    )
+    stats["abonos_medio"] = cur.rowcount if cur.rowcount is not None else 0
+
+    cur = c.execute(
+        """
+        UPDATE cotizaciones
+        SET notas=NULL
+        WHERE notas IS NOT NULL
+          AND (
+            lower(notas) LIKE '%importad%'
+            OR lower(notas) LIKE '%soluerp%'
+          )
+        """
+    )
+    stats["cotizaciones"] = cur.rowcount if cur.rowcount is not None else 0
+
+    c.commit()
+    return stats
 
 
 def extract_num_factura(*texts) -> str | None:
