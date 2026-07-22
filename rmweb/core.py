@@ -408,8 +408,7 @@ def _cotizacion_planilla_totales(cot, items, iva_pct: float = 0.19) -> dict:
         desc_pct = _pct_from_text(gg_it["descripcion"], None)
         if desc_pct is not None:
             gg_pct = desc_pct
-        elif subtotal > 0 and gg > 0:
-            gg_pct = round(gg * 100.0 / subtotal, 2)
+        # si el ítem histórico no trae %, se mantiene el % configurado solo como etiqueta
     else:
         stored_gg = float(cot["gg_monto"] or 0) if "gg_monto" in cot.keys() else 0.0
         gg = stored_gg if stored_gg > 0 else float(round(subtotal * gg_pct / 100.0))
@@ -419,8 +418,6 @@ def _cotizacion_planilla_totales(cot, items, iva_pct: float = 0.19) -> dict:
         desc_pct = _pct_from_text(util_it["descripcion"], None)
         if desc_pct is not None:
             util_pct = desc_pct
-        elif subtotal > 0 and util > 0:
-            util_pct = round(util * 100.0 / subtotal, 2)
     else:
         stored_util = float(cot["utilidad_monto"] or 0) if "utilidad_monto" in cot.keys() else 0.0
         util = stored_util if stored_util > 0 else float(round(subtotal * util_pct / 100.0))
