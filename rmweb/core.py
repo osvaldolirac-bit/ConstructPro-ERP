@@ -18,8 +18,29 @@ DB_PATH = Path(os.getenv("RIOMAIPO_DB", str(DB_PATH)))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 STATIC_DIR = BASE_DIR / "static"
-LOGO_RIOMAIPO = STATIC_DIR / "logo_riomaipo.png"
-LOGO_ERP = STATIC_DIR / "logo_erpmaster.png"
+# Logos pueden estar en /static del proyecto o en rmweb/static
+LOGO_RIOMAIPO = next(
+    (
+        p
+        for p in (
+            STATIC_DIR / "logo_riomaipo.png",
+            Path(__file__).resolve().parent / "static" / "logo_riomaipo.png",
+        )
+        if p.exists()
+    ),
+    STATIC_DIR / "logo_riomaipo.png",
+)
+LOGO_ERP = next(
+    (
+        p
+        for p in (
+            STATIC_DIR / "logo_erpmaster.png",
+            Path(__file__).resolve().parent / "static" / "logo_erpmaster.png",
+        )
+        if p.exists()
+    ),
+    STATIC_DIR / "logo_erpmaster.png",
+)
 
 DEFAULT_ACCESO = "osvaldolira@constructorariomaipo.cl"
 DEFAULT_CLAVE = "9083"
@@ -313,102 +334,290 @@ def fmt_cant_pdf(v) -> str:
 
 def cotizacion_titulo_pdf(cot) -> str:
     version = str(cot["version"] if "version" in cot.keys() else "1") or "1"
-    version = version.lstrip("Vv")
+    version = version.lstrip("Vv") or "1"
     titulo = ""
-    if "titulo" in cot.keys() and cot["titulo"]:
-        titulo = str(cot["titulo"]).strip()
+    for key in ("titulo", "asunto", "proyecto"):
+        if key in cot.keys() and cot[key]:
+            titulo = str(cot[key]).strip()
+            if titulo:
+                break
+    if not titulo and "razon_social" in cot.keys() and cot["razon_social"]:
+        titulo = str(cot["razon_social"]).strip()
     if not titulo:
-        parts = [cot["proyecto"] or "", cot["asunto"] or "", cot["razon_social"] or ""]
-        titulo = " ".join(p for p in parts if p).strip() or "COTIZACION"
+        titulo = "COTIZACION"
     return f"V{version} COTIZACIÓN {titulo}".upper()
 
 
-def cotizacion_pdf_bytes(cot, items, empresa_row) -> bytes:
+def _pct_from_text(text: str | None, default: float | None = None) -> float | None:
+    import re
+
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*%", text or "")
+    if not m:
+        return default
+    try:
+        return float(m.group(1).replace(",", "."))
+    except ValueError:
+        return default
+
+
+def _is_gg_line(desc: str | None) -> bool:
+    import re
+
+    d = (desc or "").strip().lower()
+    if not d:
+        return False
+    return bool(re.match(r"^(gg\b|g\.?\s*g\.?\b|gastos?\s+generales\b)", d))
+
+
+def _is_util_line(desc: str | None) -> bool:
+    import re
+
+    d = (desc or "").strip().lower()
+    if not d:
+        return False
+    return bool(re.match(r"^(utilidad(es)?\b|util\b)", d))
+
+
+def _split_cotizacion_items(items):
+    """Separa ítems de trabajo vs filas GG/Utilidad (datos históricos)."""
+    work = []
+    gg_it = None
+    util_it = None
+    for it in items:
+        desc = it["descripcion"] if "descripcion" in it.keys() else ""
+        if _is_gg_line(desc):
+            gg_it = it
+        elif _is_util_line(desc):
+            util_it = it
+        else:
+            work.append(it)
+    return work, gg_it, util_it
+
+
+def _cotizacion_planilla_totales(cot, items, iva_pct: float = 0.19) -> dict:
+    """Arma subtotal/GG/Utilidad/IVA ordenados para la planilla PDF."""
+    work, gg_it, util_it = _split_cotizacion_items(items)
+    subtotal = sum(float(it["total"] or 0) for it in work)
+
+    gg_pct = float(cot["gg_pct"] if "gg_pct" in cot.keys() and cot["gg_pct"] is not None else 5)
+    util_pct = float(
+        cot["utilidad_pct"] if "utilidad_pct" in cot.keys() and cot["utilidad_pct"] is not None else 15
+    )
+    if gg_it is not None:
+        gg = float(gg_it["total"] or 0)
+        desc_pct = _pct_from_text(gg_it["descripcion"], None)
+        if desc_pct is not None:
+            gg_pct = desc_pct
+        elif subtotal > 0 and gg > 0:
+            gg_pct = round(gg * 100.0 / subtotal, 2)
+    else:
+        stored_gg = float(cot["gg_monto"] or 0) if "gg_monto" in cot.keys() else 0.0
+        gg = stored_gg if stored_gg > 0 else float(round(subtotal * gg_pct / 100.0))
+
+    if util_it is not None:
+        util = float(util_it["total"] or 0)
+        desc_pct = _pct_from_text(util_it["descripcion"], None)
+        if desc_pct is not None:
+            util_pct = desc_pct
+        elif subtotal > 0 and util > 0:
+            util_pct = round(util * 100.0 / subtotal, 2)
+    else:
+        stored_util = float(cot["utilidad_monto"] or 0) if "utilidad_monto" in cot.keys() else 0.0
+        util = stored_util if stored_util > 0 else float(round(subtotal * util_pct / 100.0))
+
+    neto = float(round(subtotal + gg + util))
+    stored_iva = float(cot["iva"] or 0) if "iva" in cot.keys() else 0.0
+    stored_total = float(cot["total"] or 0) if "total" in cot.keys() else 0.0
+    stored_neto = float(cot["valor_neto"] or 0) if "valor_neto" in cot.keys() else 0.0
+
+    if stored_neto > 0 and abs(stored_neto - neto) <= 1 and stored_iva >= 0:
+        iva = stored_iva
+        total = stored_total if stored_total > 0 else neto + iva
+    elif stored_total > 0 and stored_iva > 0 and abs(stored_total - stored_iva - neto) <= 2:
+        # Legacy: a veces el neto coincidía con total-iva
+        iva = stored_iva
+        total = stored_total
+    else:
+        iva = float(round(neto * float(iva_pct or 0.19)))
+        total = neto + iva
+
+    return {
+        "work_items": work,
+        "subtotal": subtotal,
+        "gg_pct": gg_pct,
+        "util_pct": util_pct,
+        "gg": gg,
+        "util": util,
+        "neto": neto,
+        "iva": iva,
+        "iva_pct": float(iva_pct or 0.19) * 100.0,
+        "total": total,
+    }
+
+
+def cotizacion_pdf_bytes(cot, items, empresa_row, iva_pct: float = 0.19) -> bytes:
+    """PDF horizontal estilo planilla Río Maipo / Agrocastilla, columnas alineadas."""
     if FPDF is None:
         raise RuntimeError("FPDF no está instalado")
+
+    plan = _cotizacion_planilla_totales(cot, items, iva_pct=iva_pct)
+    work = plan["work_items"]
+
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=False)
     pdf.add_page()
+
     logo = LOGO_RIOMAIPO if LOGO_RIOMAIPO.exists() else LOGO_ERP
     if logo.exists():
         pdf.image(str(logo), x=128, y=4, w=40)
     else:
+        pdf.set_text_color(180, 30, 30)
         pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, _pdf_txt("RIO MAIPO Constructora"), align="C", ln=1)
+        pdf.set_xy(0, 8)
+        pdf.cell(297, 6, _pdf_txt("RIO MAIPO"), align="C", ln=1)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(297, 5, _pdf_txt("Constructora"), align="C", ln=1)
+        pdf.set_text_color(0, 0, 0)
+
+    folio = cot["folio"] if "folio" in cot.keys() and cot["folio"] else ""
+    if folio:
+        pdf.set_xy(220, 12)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(59, 5, _pdf_txt(folio), align="R")
 
     title = _pdf_txt(cotizacion_titulo_pdf(cot))
-    pdf.set_xy(18, 28)
+    x0, table_w, row_h = 18, 261, 4.0
+    pdf.set_xy(x0, 26)
     pdf.set_fill_color(210, 210, 210)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(261, 6, title, border=1, align="C", fill=True)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(table_w, 6, title, border=1, align="C", fill=True)
 
     headers = ["ITEM", "ESPECIFICACIÓN", "OBS", "UND", "CANTIDAD", "VALOR", "TOTAL"]
     widths = [14, 74, 58, 16, 24, 37, 38]
-    x0, row_h = 18, 4.0
-    pdf.set_xy(x0, 36)
-    pdf.set_fill_color(220, 220, 220)
-    pdf.set_font("Helvetica", "B", 8)
-    for h, w in zip(headers, widths):
-        pdf.cell(w, row_h, h, border=1, align="C", fill=True)
-    pdf.ln(row_h)
 
-    subtotal = float(cot["subtotal"] or 0) or sum(float(it["total"] or 0) for it in items)
-    pdf.set_x(x0)
-    pdf.set_font("Helvetica", "B", 8)
-    pdf.cell(widths[0], row_h, "1.0", border=1, align="C")
-    for w in widths[1:-1]:
-        pdf.cell(w, row_h, "", border=1)
-    pdf.cell(widths[-1], row_h, _pdf_txt(f"$ {fmt_clp_plain(subtotal)}"), border=1, align="R")
-    pdf.ln(row_h)
+    def draw_row(y: float, cells, fill: bool = False, bold: bool = False):
+        pdf.set_xy(x0, y)
+        if fill:
+            pdf.set_fill_color(220, 220, 220)
+        pdf.set_font("Helvetica", "B" if bold else "", 8)
+        for (text, align), w in zip(cells, widths):
+            pdf.cell(w, row_h, _pdf_txt(text), border=1, align=align, fill=fill)
 
-    filled = list(items)[:COT_PDF_ROWS]
+    y = 34.0
+    draw_row(y, [(h, "C") for h in headers], fill=True, bold=True)
+    y += row_h
+
+    draw_row(
+        y,
+        [
+            ("1.0", "C"),
+            ("", "L"),
+            ("", "L"),
+            ("", "C"),
+            ("", "R"),
+            ("", "R"),
+            (f"$ {fmt_clp_plain(plan['subtotal'])}", "R"),
+        ],
+        bold=True,
+    )
+    y += row_h
+
+    filled = list(work)[:COT_PDF_ROWS]
     while len(filled) < COT_PDF_ROWS:
         filled.append(None)
-    pdf.set_font("Helvetica", "", 8)
+
     for idx, it in enumerate(filled, start=1):
-        pdf.set_x(x0)
         code = f"1.{idx}"
         if it is None:
-            pdf.cell(widths[0], row_h, code, border=1, align="C")
-            for w in widths[1:-1]:
-                pdf.cell(w, row_h, "", border=1)
-            pdf.cell(widths[-1], row_h, "$ -", border=1, align="R")
+            draw_row(
+                y,
+                [
+                    (code, "C"),
+                    ("", "L"),
+                    ("", "L"),
+                    ("", "C"),
+                    ("", "R"),
+                    ("", "R"),
+                    ("$ -", "R"),
+                ],
+            )
         else:
-            pdf.cell(widths[0], row_h, code, border=1, align="C")
-            pdf.cell(widths[1], row_h, _pdf_txt(it["descripcion"])[:46], border=1)
-            pdf.cell(widths[2], row_h, _pdf_txt(it["obs"] if "obs" in it.keys() else "")[:34], border=1)
-            pdf.cell(widths[3], row_h, _pdf_txt(it["unidad"] or ""), border=1, align="C")
-            pdf.cell(widths[4], row_h, fmt_cant_pdf(it["cantidad"]), border=1, align="R")
-            pdf.cell(widths[5], row_h, _pdf_txt(f"$ {fmt_clp_plain(it['precio_unitario'])}"), border=1, align="R")
-            pdf.cell(widths[6], row_h, _pdf_txt(f"$ {fmt_clp_plain(it['total'])}"), border=1, align="R")
-        pdf.ln(row_h)
+            desc = str(it["descripcion"] or "")
+            obs = str(it["obs"] if "obs" in it.keys() and it["obs"] else "")
+            und = str(it["unidad"] or "")
+            cant = float(it["cantidad"] or 0)
+            pu = float(it["precio_unitario"] or 0)
+            tot = float(it["total"] or 0)
+            is_section = tot == 0 and pu == 0
+            if is_section:
+                draw_row(
+                    y,
+                    [
+                        (code, "C"),
+                        (desc[:46], "L"),
+                        (obs[:34], "L"),
+                        (und, "C"),
+                        ("", "R"),
+                        ("", "R"),
+                        ("", "R"),
+                    ],
+                    bold=True,
+                )
+            else:
+                draw_row(
+                    y,
+                    [
+                        (code, "C"),
+                        (desc[:46], "L"),
+                        (obs[:34], "L"),
+                        (und, "C"),
+                        (fmt_cant_pdf(cant), "R"),
+                        (f"$ {fmt_clp_plain(pu)}", "R"),
+                        (f"$ {fmt_clp_plain(tot)}", "R"),
+                    ],
+                )
+        y += row_h
 
-    gg_pct = float(cot["gg_pct"] if "gg_pct" in cot.keys() and cot["gg_pct"] is not None else 5)
-    util_pct = float(cot["utilidad_pct"] if "utilidad_pct" in cot.keys() and cot["utilidad_pct"] is not None else 15)
-    gg = float(cot["gg_monto"] if "gg_monto" in cot.keys() and cot["gg_monto"] is not None else round(subtotal * gg_pct / 100))
-    util = float(cot["utilidad_monto"] if "utilidad_monto" in cot.keys() and cot["utilidad_monto"] is not None else round(subtotal * util_pct / 100))
-    neto = float(cot["valor_neto"] if "valor_neto" in cot.keys() and cot["valor_neto"] is not None else subtotal + gg + util)
-    iva = float(cot["iva"] or 0)
-    total = float(cot["total"] or 0)
     summary = [
-        ("SUB TOTAL", f"$ {fmt_clp_plain(subtotal)}", False),
-        (f"GG {gg_pct:g}%", f"$ {fmt_clp_plain(gg)}", False),
-        (f"UTILIDAD {util_pct:g}%", f"$ {fmt_clp_plain(util)}", False),
-        ("VALOR NETO", f"$ {fmt_clp_plain(neto)}", True),
-        ("IVA", f"$ {fmt_clp_plain(iva)}", False),
-        ("TOTAL", f"$ {fmt_clp_plain(total)}", True),
+        ("SUBTOTAL", f"$ {fmt_clp_plain(plan['subtotal'])}", False),
+        (f"GG {plan['gg_pct']:g}%", f"$ {fmt_clp_plain(plan['gg'])}", False),
+        (f"UTILIDAD {plan['util_pct']:g}%", f"$ {fmt_clp_plain(plan['util'])}", False),
+        ("VALOR NETO", f"$ {fmt_clp_plain(plan['neto'])}", True),
+        (f"IVA {plan['iva_pct']:g}%", f"$ {fmt_clp_plain(plan['iva'])}", False),
+        ("TOTAL", f"$ {fmt_clp_plain(plan['total'])}", True),
     ]
     label_w, val_w = 40, 38
     sx = x0 + sum(widths) - label_w - val_w
-    sy = pdf.get_y() + 2
+    sy = y + 2
     for i, (lab, val, bold) in enumerate(summary):
         pdf.set_xy(sx, sy + i * row_h)
         pdf.set_font("Helvetica", "B" if bold else "", 8)
-        pdf.cell(label_w, row_h, _pdf_txt(lab), border=1)
-        pdf.cell(val_w, row_h, _pdf_txt(val), border=1, align="R")
+        if bold:
+            pdf.set_fill_color(235, 235, 235)
+            pdf.cell(label_w, row_h, _pdf_txt(lab), border=1, fill=True)
+            pdf.cell(val_w, row_h, _pdf_txt(val), border=1, align="R", fill=True)
+        else:
+            pdf.cell(label_w, row_h, _pdf_txt(lab), border=1)
+            pdf.cell(val_w, row_h, _pdf_txt(val), border=1, align="R")
+
+    pdf.set_xy(x0, sy)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(90, 90, 90)
+    cliente = cot["razon_social"] if "razon_social" in cot.keys() and cot["razon_social"] else ""
+    pdf.multi_cell(
+        120,
+        4,
+        _pdf_txt(
+            f"{folio} · {cliente}\n"
+            f"Planilla cotización · {date.today().strftime('%d/%m/%Y')} · ERP Master Río Maipo"
+        ),
+        border=0,
+    )
+    pdf.set_text_color(0, 0, 0)
 
     raw = pdf.output(dest="S")
     return raw.encode("latin-1") if isinstance(raw, str) else bytes(raw)
+
 
 
 def _pdf_header_portrait(pdf, empresa_row, subtitle: str) -> None:

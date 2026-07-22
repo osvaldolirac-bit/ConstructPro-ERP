@@ -302,13 +302,19 @@ def cotizaciones_form(cot_id: int | None = None):
             flash("Cotización no encontrada", "danger")
             db.close()
             return redirect(url_for("cotizaciones_list"))
-        items = db.execute(
+        raw_items = db.execute(
             """
             SELECT * FROM cotizacion_items WHERE cotizacion_id=?
             ORDER BY COALESCE(orden,0), id
             """,
             (cot_id,),
         ).fetchall()
+        # En el formulario no se editan GG/Utilidad como ítems (van en el resumen)
+        items = [
+            it
+            for it in raw_items
+            if not core._is_gg_line(it["descripcion"]) and not core._is_util_line(it["descripcion"])
+        ]
 
     iva_pct = core.param(db, "iva", 19) / 100
     gg_def = core.param(db, "gg_pct", 5)
@@ -333,20 +339,33 @@ def cotizaciones_form(cot_id: int | None = None):
         cants = request.form.getlist("cant")
         valores = request.form.getlist("valor")
         lineas = []
+        orden = 0
         for i, desc in enumerate(descs):
-            if not str(desc).strip():
+            d = str(desc).strip()
+            if not d:
+                continue
+            # No persistir GG/Utilidad como ítems de planilla
+            if core._is_gg_line(d) or core._is_util_line(d):
                 continue
             cant = float(cants[i] or 0)
+            pu = float(valores[i] or 0)
+            # Permite encabezados de sección (cant/pu en 0) si hay descripción
+            if cant < 0:
+                continue
+            if cant == 0 and pu == 0:
+                # encabezado: se guarda con cantidad 1 y valor 0 para no perderlo
+                cant = 1.0
+                pu = 0.0
             if cant <= 0:
                 continue
-            pu = float(valores[i] or 0)
             total = cant * pu
+            orden += 1
             lineas.append(
                 (
                     None,
-                    desc.strip(),
+                    d,
                     (obss[i] if i < len(obss) else "").strip() or None,
-                    i + 1,
+                    orden,
                     (unds[i] if i < len(unds) else "un").strip() or "un",
                     cant,
                     pu,
@@ -480,17 +499,19 @@ def cotizaciones_pdf(cot_id: int):
     ).fetchone()
     items = db.execute(
         """
-        SELECT descripcion, COALESCE(obs,'') AS obs, unidad, cantidad, precio_unitario, total
+        SELECT descripcion, COALESCE(obs,'') AS obs, unidad, cantidad, precio_unitario, total,
+               COALESCE(orden,0) AS orden
         FROM cotizacion_items WHERE cotizacion_id=? ORDER BY COALESCE(orden,0), id
         """,
         (cot_id,),
     ).fetchall()
     empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
+    iva_pct = core.param(db, "iva", 19) / 100.0
     db.close()
     if not cot:
         flash("Cotización no encontrada", "danger")
         return redirect(url_for("cotizaciones_list"))
-    pdf = core.cotizacion_pdf_bytes(cot, items, empresa)
+    pdf = core.cotizacion_pdf_bytes(cot, items, empresa, iva_pct=iva_pct)
     return send_file(
         BytesIO(pdf),
         mimetype="application/pdf",
