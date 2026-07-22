@@ -194,3 +194,16 @@ body {
   letter-spacing: .04em;
   margin-bottom: .2rem;
 }
+.admin-tabs .nav-link {
+  color: var(--muted);
+  font-weight: 700;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+.admin-tabs .nav-link:hover { color: var(--brand); }
+.admin-tabs .nav-link.active {
+  color: var(--brand);
+  background: transparent;
+  border-bottom-color: var(--accent);
+}

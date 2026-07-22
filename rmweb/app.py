@@ -783,16 +783,58 @@ def cuentas_borrar(cuenta_id: int):
 
 
 # ---------------------------------------------------------------------------
-# Administración simple
+# Administración (empresa, parámetros, usuarios/claves)
 # ---------------------------------------------------------------------------
+def _is_admin() -> bool:
+    return (session.get("auth_tipo") or "") == "Administrador"
+
+
+def _admin_redirect(tab: str = "empresa"):
+    return redirect(url_for("admin", tab=tab))
+
+
 @app.route("/admin/")
 @login_required
 def admin():
+    tab = request.args.get("tab") or "empresa"
+    if tab not in ("empresa", "parametros", "usuarios"):
+        tab = "empresa"
+    edit_id = request.args.get("edit", type=int)
     db = core.conn()
     empresa = db.execute("SELECT * FROM empresa WHERE id=1").fetchone()
-    params = db.execute("SELECT * FROM parametros ORDER BY nombre").fetchall()
+    params = db.execute(
+        """
+        SELECT clave, nombre, valor, unidad FROM parametros
+        WHERE clave != 'auth_seed'
+        ORDER BY nombre
+        """
+    ).fetchall()
+    usuarios = db.execute(
+        """
+        SELECT id, usuario, COALESCE(nombre,'') AS nombre,
+               COALESCE(tipo,'Administrador') AS tipo, activo
+        FROM usuarios
+        ORDER BY tipo, usuario
+        """
+    ).fetchall()
+    edit_user = None
+    if edit_id:
+        edit_user = db.execute(
+            "SELECT id, usuario, nombre, tipo, activo FROM usuarios WHERE id=?",
+            (edit_id,),
+        ).fetchone()
     db.close()
-    return render_template("admin.html", active="admin", empresa=empresa, params=params)
+    return render_template(
+        "admin.html",
+        active="admin",
+        tab=tab,
+        empresa=empresa,
+        params=params,
+        usuarios=usuarios,
+        edit_user=edit_user,
+        tipos_usuario=core.TIPOS_USUARIO,
+        is_admin=_is_admin(),
+    )
 
 
 @app.route("/admin/empresa", methods=["POST"])
@@ -817,7 +859,140 @@ def admin_empresa():
     db.commit()
     db.close()
     flash("Empresa actualizada", "ok")
-    return redirect(url_for("admin"))
+    return _admin_redirect("empresa")
+
+
+@app.route("/admin/parametro", methods=["POST"])
+@login_required
+def admin_parametro():
+    clave = (request.form.get("clave") or "").strip()
+    valor = (request.form.get("valor") or "").strip()
+    if not clave or clave == "auth_seed":
+        flash("Parámetro no válido", "danger")
+        return _admin_redirect("parametros")
+    db = core.conn()
+    db.execute("UPDATE parametros SET valor=? WHERE clave=?", (valor, clave))
+    db.commit()
+    db.close()
+    flash("Parámetro actualizado", "ok")
+    return _admin_redirect("parametros")
+
+
+@app.route("/admin/clave", methods=["POST"])
+@login_required
+def admin_clave():
+    actual = request.form.get("clave_actual") or ""
+    nueva = (request.form.get("clave_nueva") or "").strip()
+    nueva2 = (request.form.get("clave_nueva2") or "").strip()
+    auth_user = session.get("auth_user") or ""
+    if not core.get_user_if_valid(auth_user, actual):
+        flash("La clave actual no es correcta", "danger")
+    elif len(nueva) < 4:
+        flash("La nueva clave debe tener al menos 4 caracteres", "danger")
+    elif nueva != nueva2:
+        flash("Las claves nuevas no coinciden", "danger")
+    else:
+        salt, digest = core.hash_password(nueva)
+        db = core.conn()
+        db.execute(
+            "UPDATE usuarios SET salt=?, clave_hash=? WHERE lower(usuario)=lower(?)",
+            (salt, digest, auth_user),
+        )
+        db.commit()
+        db.close()
+        flash("Clave actualizada", "ok")
+    return _admin_redirect("usuarios")
+
+
+@app.route("/admin/usuarios/nuevo", methods=["POST"])
+@login_required
+def admin_usuario_nuevo():
+    if not _is_admin():
+        flash("Solo un Administrador puede crear usuarios", "danger")
+        return _admin_redirect("usuarios")
+    u_nuevo = (request.form.get("usuario") or "").strip()
+    n_nuevo = (request.form.get("nombre") or "").strip()
+    t_nuevo = request.form.get("tipo") or "Consulta"
+    c_nuevo = (request.form.get("clave") or "").strip()
+    c_nuevo2 = (request.form.get("clave2") or "").strip()
+    if t_nuevo not in core.TIPOS_USUARIO:
+        t_nuevo = "Consulta"
+    if not u_nuevo:
+        flash("Ingrese un usuario", "danger")
+    elif len(c_nuevo) < 4:
+        flash("La clave debe tener al menos 4 caracteres", "danger")
+    elif c_nuevo != c_nuevo2:
+        flash("Las claves no coinciden", "danger")
+    else:
+        try:
+            salt, digest = core.hash_password(c_nuevo)
+            db = core.conn()
+            db.execute(
+                """
+                INSERT INTO usuarios (usuario, salt, clave_hash, nombre, tipo, activo)
+                VALUES (?,?,?,?,?,1)
+                """,
+                (u_nuevo, salt, digest, n_nuevo or None, t_nuevo),
+            )
+            db.commit()
+            db.close()
+            flash(f"Usuario {u_nuevo} creado", "ok")
+        except Exception:
+            flash("Ese usuario ya existe", "danger")
+    return _admin_redirect("usuarios")
+
+
+@app.route("/admin/usuarios/<int:uid>", methods=["POST"])
+@login_required
+def admin_usuario_editar(uid: int):
+    if not _is_admin():
+        flash("Solo un Administrador puede editar usuarios", "danger")
+        return _admin_redirect("usuarios")
+    n_edit = (request.form.get("nombre") or "").strip()
+    t_edit = request.form.get("tipo") or "Consulta"
+    activo_edit = 1 if request.form.get("activo") == "1" else 0
+    reset_clave = (request.form.get("clave") or "").strip()
+    reset_clave2 = (request.form.get("clave2") or "").strip()
+    if t_edit not in core.TIPOS_USUARIO:
+        t_edit = "Consulta"
+    db = core.conn()
+    row = db.execute(
+        "SELECT id, usuario FROM usuarios WHERE id=?", (uid,)
+    ).fetchone()
+    if not row:
+        db.close()
+        flash("Usuario no encontrado", "danger")
+        return _admin_redirect("usuarios")
+    auth_user = session.get("auth_user") or ""
+    if row["usuario"] == auth_user and not activo_edit:
+        db.close()
+        flash("No puedes desactivarte a ti mismo", "danger")
+        return redirect(url_for("admin", tab="usuarios", edit=uid))
+    if reset_clave and len(reset_clave) < 4:
+        db.close()
+        flash("La nueva clave debe tener al menos 4 caracteres", "danger")
+        return redirect(url_for("admin", tab="usuarios", edit=uid))
+    if reset_clave and reset_clave != reset_clave2:
+        db.close()
+        flash("Las claves nuevas no coinciden", "danger")
+        return redirect(url_for("admin", tab="usuarios", edit=uid))
+    db.execute(
+        "UPDATE usuarios SET nombre=?, tipo=?, activo=? WHERE id=?",
+        (n_edit or None, t_edit, activo_edit, uid),
+    )
+    if reset_clave:
+        salt, digest = core.hash_password(reset_clave)
+        db.execute(
+            "UPDATE usuarios SET salt=?, clave_hash=? WHERE id=?",
+            (salt, digest, uid),
+        )
+    db.commit()
+    db.close()
+    if row["usuario"] == auth_user:
+        session["auth_tipo"] = t_edit
+        session["auth_nombre"] = n_edit or auth_user
+    flash("Usuario actualizado", "ok")
+    return _admin_redirect("usuarios")
 
 
 def create_app():
