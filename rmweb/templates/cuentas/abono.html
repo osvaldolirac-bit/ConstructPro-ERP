@@ -1,32 +1,206 @@
 {% extends "base.html" %}
-{% block title %}Abono {{ cuenta.documento }}{% endblock %}
+{% block title %}Pagar {{ doc_display }}{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Abono · {{ cuenta.documento }}</h1>
-    <p>{{ cuenta.razon_social or '—' }} · Saldo {{ clp(cuenta.saldo) }}</p>
+    <h1>Registrar pago</h1>
+    <p>Abono o pago del documento · {{ cuenta.razon_social or 'Cliente' }}</p>
   </div>
-  <a class="btn btn-outline-secondary" href="{{ url_for('cuentas_detalle', cuenta_id=cuenta.id) }}">Volver</a>
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-outline-secondary" href="{{ url_for('cuentas_detalle', cuenta_id=cuenta.id) }}">Volver al documento</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('cuentas_list') }}">Cartera</a>
+  </div>
 </div>
-<div class="panel" style="max-width:520px">
-  <form method="post">
-    <div class="mb-3">
-      <label class="form-label fw-bold">Monto abono</label>
-      <input class="form-control" type="number" step="1" name="monto" value="{{ cuenta.saldo }}" max="{{ cuenta.saldo }}" min="1" required>
+
+<div class="row g-3 align-items-start">
+  <div class="col-lg-5">
+    <div class="panel pay-summary">
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+        <div>
+          <div class="text-muted small text-uppercase fw-bold">Documento</div>
+          <div class="pay-doc">{{ doc_display }}</div>
+          {% if factura_display and factura_display != '-' %}
+          <div class="text-muted">Factura <strong>{{ factura_display }}</strong></div>
+          {% endif %}
+        </div>
+        <span class="estado {{ cxc_estado_class(cuenta.estado) }}">{{ cxc_estado_label(cuenta.estado) }}</span>
+      </div>
+
+      <div class="pay-client mb-3">{{ cuenta.razon_social or '—' }}</div>
+
+      <div class="pay-progress mb-3">
+        <div class="d-flex justify-content-between small mb-1">
+          <span>Avance de cobro</span>
+          <span class="fw-bold">{{ '%.0f'|format(pct_pagado) }}%</span>
+        </div>
+        <div class="progress" role="progressbar" aria-valuenow="{{ pct_pagado }}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar bg-success" style="width: {{ pct_pagado }}%"></div>
+        </div>
+      </div>
+
+      <div class="row g-2">
+        <div class="col-4">
+          <div class="pay-metric">
+            <span>Total</span>
+            <strong>{{ clp(cuenta.monto) }}</strong>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="pay-metric">
+            <span>Abonado</span>
+            <strong class="text-orange">{{ clp(cuenta.abonado) }}</strong>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="pay-metric pay-metric-saldo">
+            <span>Saldo</span>
+            <strong>{{ clp(cuenta.saldo) }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="small text-muted mt-3">
+        Emisión {{ fmt_dmy(cuenta.fecha_emision) }} · Vence {{ fmt_dmy(cuenta.fecha_vencimiento) }}
+      </div>
     </div>
-    <div class="mb-3">
-      <label class="form-label fw-bold">Medio</label>
-      <select class="form-select" name="medio">
-        {% for m in ['transferencia','cheque','efectivo','tarjeta','otro'] %}
-        <option value="{{ m }}">{{ m }}</option>
-        {% endfor %}
-      </select>
+
+    {% if abonos %}
+    <div class="panel">
+      <h5 class="fw-bold mb-3">Abonos anteriores</h5>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr><th>Fecha</th><th>Monto</th><th>Medio</th></tr>
+          </thead>
+          <tbody>
+            {% for a in abonos %}
+            <tr>
+              <td>{{ fmt_dmy(a.fecha) }}</td>
+              <td class="fw-bold">{{ clp(a.monto) }}</td>
+              <td>{{ a.medio }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-    <div class="mb-3">
-      <label class="form-label fw-bold">Nota</label>
-      <input class="form-control" name="nota">
+    {% endif %}
+  </div>
+
+  <div class="col-lg-7">
+    <div class="panel pay-form">
+      <h5 class="fw-bold mb-1">Nuevo abono</h5>
+      <p class="text-muted small mb-3">Elige un monto rápido o ingresa uno parcial. No puede superar el saldo.</p>
+
+      <form method="post" id="payForm">
+        <div class="mb-3">
+          <label class="form-label fw-bold">Monto a pagar</label>
+          <div class="input-group input-group-lg pay-amount">
+            <span class="input-group-text">$</span>
+            <input class="form-control" type="number" step="1" min="1" max="{{ saldo_int }}"
+                   name="monto" id="monto" value="{{ saldo_int }}" required>
+          </div>
+          <div class="pay-chips mt-2">
+            <button type="button" class="pay-chip active" data-monto="{{ saldo_int }}">Pagar todo</button>
+            {% if mitad > 0 and mitad < saldo_int %}
+            <button type="button" class="pay-chip" data-monto="{{ mitad }}">50%</button>
+            {% endif %}
+            {% if cuarto > 0 and cuarto < saldo_int %}
+            <button type="button" class="pay-chip" data-monto="{{ cuarto }}">25%</button>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-5">
+            <label class="form-label fw-bold">Fecha</label>
+            <input class="form-control" type="date" name="fecha" value="{{ today }}" required>
+          </div>
+          <div class="col-md-7">
+            <label class="form-label fw-bold">Medio de pago</label>
+            <div class="pay-medios">
+              {% for key, label in medios %}
+              <label class="pay-medio">
+                <input type="radio" name="medio" value="{{ key }}" {% if loop.first %}checked{% endif %}>
+                <span>{{ label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-bold">Nota <span class="text-muted fw-normal">(opcional)</span></label>
+          <input class="form-control" name="nota" placeholder="Ej: Transferencia Banco Estado, Nº operación…">
+        </div>
+
+        <div class="pay-result mb-3">
+          <div>
+            <span>Quedará de saldo</span>
+            <strong id="saldoRestante">{{ clp(0) }}</strong>
+          </div>
+          <div class="text-muted small" id="payHint">Este pago cierra el documento.</div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-success btn-lg fw-bold px-4" type="submit">
+            <i class="bi bi-cash-coin"></i> Confirmar pago
+          </button>
+          <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('cuentas_detalle', cuenta_id=cuenta.id) }}">Cancelar</a>
+        </div>
+      </form>
     </div>
-    <button class="btn btn-success fw-bold" type="submit">Registrar abono</button>
-  </form>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const saldo = {{ saldo_int }};
+  const input = document.getElementById('monto');
+  const restante = document.getElementById('saldoRestante');
+  const hint = document.getElementById('payHint');
+  const chips = document.querySelectorAll('.pay-chip');
+
+  function clp(n) {
+    const v = Math.max(0, Math.round(Number(n) || 0));
+    return '$' + v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  function refresh() {
+    let m = Number(input.value || 0);
+    if (m > saldo) {
+      m = saldo;
+      input.value = saldo;
+    }
+    if (m < 0) m = 0;
+    const left = Math.max(0, saldo - m);
+    restante.textContent = clp(left);
+    if (left <= 0 && m > 0) {
+      hint.textContent = 'Este pago cierra el documento.';
+      hint.className = 'text-success small fw-bold';
+    } else if (m > 0) {
+      hint.textContent = 'Quedará como Abonado (pago parcial).';
+      hint.className = 'text-muted small';
+    } else {
+      hint.textContent = 'Ingresa un monto mayor a 0.';
+      hint.className = 'text-muted small';
+    }
+    chips.forEach(function (chip) {
+      chip.classList.toggle('active', Number(chip.dataset.monto) === m);
+    });
+  }
+
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      input.value = chip.dataset.monto;
+      refresh();
+      input.focus();
+    });
+  });
+  input.addEventListener('input', refresh);
+  refresh();
+})();
+</script>
 {% endblock %}

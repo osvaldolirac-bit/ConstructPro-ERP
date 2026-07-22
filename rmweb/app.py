@@ -855,10 +855,15 @@ def cuentas_pdf(cuenta_id: int):
 @login_required
 def cuentas_abono(cuenta_id: int):
     db = core.conn()
+    core.scrub_import_labels(db)
+    core.sync_cuenta_cotizacion_links(db)
     cuenta = db.execute(
         """
-        SELECT cu.*, cl.razon_social FROM cuentas cu
-        LEFT JOIN clientes cl ON cl.id=cu.cliente_id WHERE cu.id=?
+        SELECT cu.*, cl.razon_social, cot.folio AS cot_folio
+        FROM cuentas cu
+        LEFT JOIN clientes cl ON cl.id=cu.cliente_id
+        LEFT JOIN cotizaciones cot ON cot.id=cu.cotizacion_id
+        WHERE cu.id=?
         """,
         (cuenta_id,),
     ).fetchone()
@@ -870,24 +875,62 @@ def cuentas_abono(cuenta_id: int):
         flash("Documento ya pagado", "ok")
         db.close()
         return redirect(url_for("cuentas_detalle", cuenta_id=cuenta_id))
+
+    medios = [
+        ("Transferencia", "Transferencia"),
+        ("Cheque", "Cheque"),
+        ("Efectivo", "Efectivo"),
+        ("Tarjeta", "Tarjeta"),
+        ("Otro", "Otro"),
+    ]
+    saldo = float(cuenta["saldo"] or 0)
+    monto_total = float(cuenta["monto"] or 0)
+    abonado = float(cuenta["abonado"] or 0)
+
     if request.method == "POST":
         monto = float(request.form.get("monto") or 0)
-        medio = request.form.get("medio") or "transferencia"
+        medio = (request.form.get("medio") or "Transferencia").strip() or "Transferencia"
         nota = (request.form.get("nota") or "").strip() or None
-        if monto <= 0 or monto > float(cuenta["saldo"]):
-            flash("Monto inválido", "danger")
+        fecha = (request.form.get("fecha") or "").strip() or date.today().isoformat()
+        if monto <= 0 or monto > saldo + 0.001:
+            flash("Monto inválido: debe ser mayor a 0 y no superar el saldo", "danger")
         else:
             db.execute(
                 "INSERT INTO abonos (cuenta_id, fecha, monto, medio, nota) VALUES (?,?,?,?,?)",
-                (cuenta_id, date.today().isoformat(), monto, medio, nota),
+                (cuenta_id, fecha, monto, medio, nota),
             )
             core.recalc_cuenta(db, cuenta_id)
             db.commit()
-            flash("Abono registrado", "ok")
+            nuevo = db.execute("SELECT saldo FROM cuentas WHERE id=?", (cuenta_id,)).fetchone()
+            if nuevo and float(nuevo["saldo"] or 0) <= 0:
+                flash(f"Pago registrado · documento pagado ({core.clp(monto)})", "ok")
+            else:
+                flash(f"Abono registrado · {core.clp(monto)}", "ok")
             db.close()
             return redirect(url_for("cuentas_detalle", cuenta_id=cuenta_id))
+
+    abonos = db.execute(
+        "SELECT fecha, monto, medio, nota FROM abonos WHERE cuenta_id=? ORDER BY id DESC",
+        (cuenta_id,),
+    ).fetchall()
+    doc_disp, fac_disp = core.cuenta_doc_factura_display(dict(cuenta))
+    pct = (abonado / monto_total * 100.0) if monto_total > 0 else 0.0
+    saldo_int = int(round(saldo))
     db.close()
-    return render_template("cuentas/abono.html", active="cuentas", cuenta=cuenta)
+    return render_template(
+        "cuentas/abono.html",
+        active="cuentas",
+        cuenta=cuenta,
+        abonos=abonos,
+        doc_display=doc_disp,
+        factura_display=fac_disp,
+        medios=medios,
+        today=date.today().isoformat(),
+        saldo_int=saldo_int,
+        mitad=int(round(saldo / 2)),
+        cuarto=int(round(saldo / 4)),
+        pct_pagado=min(100.0, max(0.0, pct)),
+    )
 
 
 @app.route("/cuentas/<int:cuenta_id>/borrar", methods=["POST"])

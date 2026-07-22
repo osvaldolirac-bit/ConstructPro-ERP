@@ -208,3 +208,124 @@ body {
   background: transparent;
   border-bottom-color: var(--accent);
 }
+
+/* Pago / abono CxC */
+.pay-summary .pay-doc {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: var(--brand);
+  line-height: 1.15;
+}
+.pay-client {
+  font-weight: 700;
+  font-size: 1.02rem;
+}
+.pay-metric {
+  background: #f4f7fb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: .65rem .7rem;
+  min-height: 72px;
+}
+.pay-metric span {
+  display: block;
+  font-size: .72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 700;
+  margin-bottom: .2rem;
+}
+.pay-metric strong {
+  font-size: 1rem;
+  color: var(--brand);
+}
+.pay-metric-saldo {
+  background: #fff7ed;
+  border-color: #f0c48a;
+}
+.pay-metric-saldo strong { color: #c46a12; }
+.text-orange { color: #e67e22 !important; }
+.pay-progress .progress {
+  height: .65rem;
+  background: #e7eef7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.pay-form .pay-amount .form-control {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--brand);
+}
+.pay-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+}
+.pay-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--brand);
+  font-weight: 700;
+  font-size: .82rem;
+  border-radius: 999px;
+  padding: .35rem .85rem;
+}
+.pay-chip:hover { border-color: var(--accent); color: var(--accent); }
+.pay-chip.active {
+  background: #e8f0ff;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pay-medios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
+.pay-medio {
+  margin: 0;
+  cursor: pointer;
+}
+.pay-medio input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.pay-medio span {
+  display: inline-block;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  padding: .45rem .7rem;
+  font-weight: 700;
+  font-size: .82rem;
+  color: var(--muted);
+}
+.pay-medio input:checked + span {
+  background: #eaf7f1;
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.pay-result {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, #f4f7fb, #eef6f2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: .85rem 1rem;
+}
+.pay-result span {
+  display: block;
+  font-size: .75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 700;
+}
+.pay-result strong {
+  font-size: 1.25rem;
+  color: var(--brand);
+}
