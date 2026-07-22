@@ -54,7 +54,7 @@ def inject_styles() -> None:
         """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,500,0,0&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #eef2f7;
@@ -482,6 +482,64 @@ def inject_styles() -> None:
   div[data-testid="stVerticalBlockBorderWrapper"] {
     background: #fff;
     margin-bottom: .55rem;
+  }
+
+  /* Botones laterales estilo SOLUERP (iconos cuadrados de color) */
+  button[title="Visualizar"],
+  button[title="PDF"],
+  button[title="Modificar"],
+  button[title="Eliminar"],
+  button[title="Abonar"],
+  button[aria-label="Visualizar"],
+  button[aria-label="PDF"],
+  button[aria-label="Modificar"],
+  button[aria-label="Eliminar"],
+  button[aria-label="Abonar"] {
+    font-family: "Material Symbols Outlined", "Manrope", sans-serif !important;
+    font-size: 1.2rem !important;
+    font-weight: 500 !important;
+    line-height: 1 !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    min-width: 2.2rem !important;
+    width: 2.2rem !important;
+    max-width: 2.2rem !important;
+    height: 2.2rem !important;
+    min-height: 2.2rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 6px !important;
+    color: #fff !important;
+    box-shadow: 0 2px 6px rgba(22, 58, 95, .14) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  button[title="Visualizar"], button[aria-label="Visualizar"] { background: #2f6fed !important; }
+  button[title="Visualizar"]:hover, button[aria-label="Visualizar"]:hover { background: #1f5ad6 !important; border:0 !important; color:#fff !important; }
+  button[title="PDF"], button[aria-label="PDF"] { background: #0f8fa8 !important; }
+  button[title="PDF"]:hover, button[aria-label="PDF"]:hover { background: #0c7a8f !important; border:0 !important; color:#fff !important; }
+  button[title="Modificar"], button[aria-label="Modificar"] { background: #e67e22 !important; }
+  button[title="Modificar"]:hover, button[aria-label="Modificar"]:hover { background: #cf6d14 !important; border:0 !important; color:#fff !important; }
+  button[title="Eliminar"], button[aria-label="Eliminar"] { background: #c0392b !important; }
+  button[title="Eliminar"]:hover, button[aria-label="Eliminar"]:hover { background: #a93226 !important; border:0 !important; color:#fff !important; }
+  button[title="Abonar"], button[aria-label="Abonar"] { background: #1f8a65 !important; }
+  button[title="Abonar"]:hover, button[aria-label="Abonar"]:hover { background: #187554 !important; border:0 !important; color:#fff !important; }
+  button[title="Visualizar"] p, button[aria-label="Visualizar"] p,
+  button[title="PDF"] p, button[aria-label="PDF"] p,
+  button[title="Modificar"] p, button[aria-label="Modificar"] p,
+  button[title="Eliminar"] p, button[aria-label="Eliminar"] p,
+  button[title="Abonar"] p, button[aria-label="Abonar"] p,
+  button[title="Visualizar"] div, button[aria-label="Visualizar"] div,
+  button[title="PDF"] div, button[aria-label="PDF"] div,
+  button[title="Modificar"] div, button[aria-label="Modificar"] div,
+  button[title="Eliminar"] div, button[aria-label="Eliminar"] div,
+  button[title="Abonar"] div, button[aria-label="Abonar"] div {
+    font-family: "Material Symbols Outlined", "Manrope", sans-serif !important;
+    font-size: 1.2rem !important;
+    margin: 0 !important;
+    line-height: 1 !important;
+    color: #fff !important;
   }
 
   .rm-footer-mark {
@@ -1112,6 +1170,14 @@ def alert_line(nivel: str, msg: str) -> None:
 
 def empty_state(msg: str) -> None:
     st.markdown(f'<div class="empty-state">{msg}</div>', unsafe_allow_html=True)
+
+
+# Iconos Material Symbols Outlined (ligatures) para botones laterales tipo SOLUERP
+ICON_VER = "visibility"
+ICON_PDF = "picture_as_pdf"
+ICON_EDIT = "edit_square"
+ICON_DEL = "delete"
+ICON_ABONO = "payments"
 
 
 def estado_dot_class(estado: str) -> str:
@@ -2401,7 +2467,7 @@ elif modulo == "Cotizaciones":
         if not rows:
             empty_state("No hay cotizaciones para estos filtros. Prueba + Nueva.")
         else:
-            head = st.columns([0.35, 0.9, 0.85, 2.0, 0.95, 0.9, 1.9])
+            head = st.columns([0.35, 0.9, 0.85, 2.1, 0.95, 0.9, 1.35])
             headers = ["#", "Número", "Fecha", "Cliente", "Monto", "Estado", "Acciones"]
             for col, title in zip(head, headers):
                 col.markdown(
@@ -2417,7 +2483,7 @@ elif modulo == "Cotizaciones":
                 desc = (r["asunto"] or r["proyecto"] or "").strip()
                 cliente = r["cliente"] or "—"
                 c_n, c_num, c_fec, c_cli, c_mon, c_est, c_act = st.columns(
-                    [0.35, 0.9, 0.85, 2.0, 0.95, 0.9, 1.9],
+                    [0.35, 0.9, 0.85, 2.1, 0.95, 0.9, 1.35],
                     vertical_alignment="center",
                 )
                 zebra = "#fafcff" if idx % 2 == 0 else "#ffffff"
@@ -2452,23 +2518,23 @@ elif modulo == "Cotizaciones":
                         unsafe_allow_html=True,
                     )
                 with c_act:
-                    a1, a2, a3, a4 = st.columns(4)
+                    a1, a2, a3, a4 = st.columns(4, gap="small")
                     with a1:
-                        if st.button("Ver", key=f"cot_ver_{cid}", use_container_width=True, help="Visualizar"):
+                        if st.button(ICON_VER, key=f"cot_ver_{cid}", help="Visualizar"):
                             st.session_state.cot_mode = "view"
                             st.session_state.cot_focus_id = cid
                             st.rerun()
                     with a2:
-                        if st.button("PDF", key=f"cot_pdf_{cid}", use_container_width=True, help="PDF"):
+                        if st.button(ICON_PDF, key=f"cot_pdf_{cid}", help="PDF"):
                             st.session_state.cot_pdf_id = cid
                             st.rerun()
                     with a3:
-                        if st.button("Editar", key=f"cot_edit_{cid}", use_container_width=True, help="Modificar"):
+                        if st.button(ICON_EDIT, key=f"cot_edit_{cid}", help="Modificar"):
                             st.session_state.cot_mode = "edit"
                             st.session_state.cot_focus_id = cid
                             st.rerun()
                     with a4:
-                        if st.button("Borrar", key=f"cot_del_{cid}", use_container_width=True, help="Eliminar"):
+                        if st.button(ICON_DEL, key=f"cot_del_{cid}", help="Eliminar"):
                             st.session_state.cot_delete_id = cid
                             st.rerun()
 
@@ -3026,7 +3092,7 @@ elif modulo == "Cuentas por cobrar":
 
                     with st.container(border=True):
                         c_info, c_money, c_est, c_act = st.columns(
-                            [2.6, 1.5, 1.0, 1.8],
+                            [2.5, 1.4, 0.9, 1.55],
                             vertical_alignment="center",
                             gap="medium",
                         )
@@ -3064,21 +3130,33 @@ elif modulo == "Cuentas por cobrar":
                                 unsafe_allow_html=True,
                             )
                         with c_act:
-                            a1, a2, a3 = st.columns(3, gap="small")
-                            with a1:
-                                if st.button("Ver", key=f"cxc_ver_{cid}", use_container_width=True):
+                            n_act = 4 if saldo_v > 0 else 3
+                            acts = st.columns(n_act, gap="small")
+                            with acts[0]:
+                                if st.button(ICON_VER, key=f"cxc_ver_{cid}", help="Visualizar"):
                                     st.session_state.cxc_mode = "view"
                                     st.session_state.cxc_focus_id = cid
                                     st.rerun()
-                            with a2:
-                                if st.button("Editar", key=f"cxc_edit_{cid}", use_container_width=True):
+                            with acts[1]:
+                                if st.button(ICON_EDIT, key=f"cxc_edit_{cid}", help="Modificar"):
                                     st.session_state.cxc_mode = "edit"
                                     st.session_state.cxc_focus_id = cid
                                     st.rerun()
-                            with a3:
-                                if st.button("Borrar", key=f"cxc_del_{cid}", use_container_width=True):
-                                    st.session_state.cxc_delete_id = cid
-                                    st.rerun()
+                            if saldo_v > 0:
+                                with acts[2]:
+                                    if st.button(ICON_ABONO, key=f"cxc_abono_{cid}", help="Abonar"):
+                                        st.session_state.cxc_mode = "abono"
+                                        st.session_state.cxc_focus_id = cid
+                                        st.rerun()
+                                with acts[3]:
+                                    if st.button(ICON_DEL, key=f"cxc_del_{cid}", help="Eliminar"):
+                                        st.session_state.cxc_delete_id = cid
+                                        st.rerun()
+                            else:
+                                with acts[2]:
+                                    if st.button(ICON_DEL, key=f"cxc_del_{cid}", help="Eliminar"):
+                                        st.session_state.cxc_delete_id = cid
+                                        st.rerun()
 
         # =====================================================================
         # VISUALIZAR
